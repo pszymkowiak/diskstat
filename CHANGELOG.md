@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/pszymkowiak/diskstat/compare/v0.5.0...v0.6.0) (2026-03-12)
+
+
+### Features
+
+* add JSON export, config file support, and progress indicator ([b86246d](https://github.com/pszymkowiak/diskstat/commit/b86246dd3f2c1dfeed7bf8c2ed7479276d951056))
+
 ## [0.5.0](https://github.com/pszymkowiak/diskstat/compare/v0.4.0...v0.5.0) (2026-03-12)
 
 
