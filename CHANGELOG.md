@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/pszymkowiak/diskstat/compare/v0.1.0...v0.2.0) (2026-03-12)
+
+
+### Features
+
+* bug fixes, CLI options, README multi-langue, unit tests ([7f33417](https://github.com/pszymkowiak/diskstat/commit/7f33417ed44fbae388776af5f7ff0c37dc495766))
+
 ## 0.1.0 (2026-03-12)
 
 
