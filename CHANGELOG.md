@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/pszymkowiak/diskstat/compare/v0.4.0...v0.5.0) (2026-03-12)
+
+
+### Features
+
+* add improver agent + CLAUDE.md project instructions ([8b113f0](https://github.com/pszymkowiak/diskstat/commit/8b113f0889d4b49af8d3e7f82b6a85777b71afad))
+* add sort modes and comprehensive tests ([cd154d6](https://github.com/pszymkowiak/diskstat/commit/cd154d6a7022da80d61d1fc5ad2f6a4d1f553cb0))
+
 ## [0.4.0](https://github.com/pszymkowiak/diskstat/compare/v0.3.0...v0.4.0) (2026-03-12)
 
 
