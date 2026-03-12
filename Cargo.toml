@@ -1,6 +1,6 @@
 [package]
 name = "diskstat"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 description = "Fast TUI disk usage analyzer — WinDirStat/ncdu alternative"
 license = "MIT"
@@ -21,6 +21,9 @@ unicode-width = "0.2"
 libc = "0.2"
 rusqlite = { version = "0.31", features = ["bundled"] }
 clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
 
 [profile.release]
 opt-level = 3

@@ -33,7 +33,9 @@ diskstat combines the best features of existing disk usage analyzers with modern
 - **Search** (vim-style `/`)
 - **Split pane** with draggable separator
 - **Multiple themes** (cycle with `t`)
-- **Export to CSV**
+- **Export to CSV or JSON** (JSON mode for scripting/automation)
+- **Config file support** (~/.config/diskstat/config.toml)
+- **Progress indicator** during scan with animated spinner
 - **Safe**: symlinks skipped, delete restricted to scan root, 10M node OOM guard
 
 ### Installation
@@ -63,8 +65,57 @@ diskstat                  # Scan current directory (or last scanned)
 diskstat /path/to/dir     # Scan specific directory
 diskstat ~/Downloads      # Scan Downloads
 diskstat -f /path         # Force fresh scan (ignore cache)
+diskstat --json /path     # Export scan results to JSON (no TUI)
 diskstat --info           # Show version info
 ```
+
+### JSON export mode
+
+Export scan results to JSON for scripting, piping to `jq`, or CI/CD integration:
+
+```bash
+# Export to JSON
+diskstat --json ~/Downloads > scan.json
+
+# Pipe to jq for analysis
+diskstat --json ~/Downloads | jq '.top_files[:10]'
+diskstat --json ~/Downloads | jq '.extensions | sort_by(.size) | reverse | .[:5]'
+diskstat --json ~/Downloads | jq '.duplicates | map(.wasted_size = .size * (.paths | length - 1))'
+```
+
+JSON output schema:
+```json
+{
+  "root": "/path",
+  "total_size": 123456789,
+  "file_count": 1234,
+  "scan_time_ms": 456,
+  "top_files": [{"path": "...", "size": 123, "age_days": 45}],
+  "extensions": [{"ext": "rs", "size": 456, "count": 12}],
+  "duplicates": [{"hash": "...", "size": 789, "paths": ["...", "..."]}]
+}
+```
+
+### Configuration
+
+Create `~/.config/diskstat/config.toml` to customize defaults:
+
+```toml
+[scan]
+exclude = ["node_modules", ".git", "target", "__pycache__"]
+max_nodes = 10000000
+
+[ui]
+theme = 0
+show_treemap = true
+split_pct = 40
+
+[display]
+top_files_count = 50
+sort_mode = "size_desc"  # or size_asc, name_asc, name_desc, age_newest, age_oldest
+```
+
+CLI arguments override config file settings.
 
 ### Keyboard shortcuts
 
@@ -118,7 +169,9 @@ diskstat --info           # Show version info
 - **Recherche** (style vim `/`)
 - **Panneau divise** avec separateur deplacable
 - **Themes multiples** (changer avec `t`)
-- **Export CSV**
+- **Export CSV ou JSON** (mode JSON pour scripts/automatisation)
+- **Fichier de configuration** (~/.config/diskstat/config.toml)
+- **Indicateur de progression** pendant le scan avec spinner anime
 - **Securise** : symlinks ignores, suppression restreinte au repertoire scanne, garde OOM 10M noeuds
 
 ### Installation
@@ -148,6 +201,7 @@ diskstat                  # Scanner le repertoire courant (ou le dernier scanne)
 diskstat /chemin/vers/dir # Scanner un repertoire specifique
 diskstat ~/Downloads      # Scanner Downloads
 diskstat -f /chemin       # Forcer un scan frais (ignorer le cache)
+diskstat --json /chemin   # Exporter les resultats en JSON (sans TUI)
 diskstat --info           # Afficher les infos de version
 ```
 

@@ -1,7 +1,9 @@
 #![allow(dead_code)]
 mod actions;
 mod app;
+mod config;
 mod i18n;
+mod json_export;
 mod scanner;
 mod treemap_algo;
 mod types;
@@ -26,7 +28,9 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
 use app::{ActivePane, ActiveTab, App, ScanState};
+use indextree::NodeId;
 use scanner::debug_log::DebugLog;
+use types::ScanProgress;
 use ui::menu::{self, MenuAction};
 
 /// Fast TUI disk usage analyzer — WinDirStat/ncdu alternative
@@ -49,6 +53,10 @@ struct Cli {
     /// Common patterns: node_modules, .git, target, __pycache__, .cache
     #[arg(short = 'e', long = "exclude", value_name = "PATTERN")]
     exclude: Vec<String>,
+
+    /// Export scan results to JSON (outputs to stdout, no TUI)
+    #[arg(long = "json")]
+    json: bool,
 }
 
 fn main() -> io::Result<()> {
@@ -80,6 +88,11 @@ fn main() -> io::Result<()> {
                 ("args", &env::args().collect::<Vec<_>>().join(" ")),
             ],
         );
+    }
+
+    // JSON export mode (no TUI)
+    if cli.json {
+        return run_json_export(root_path, cli.exclude);
     }
 
     // Setup terminal
@@ -905,4 +918,69 @@ fn graft_children(
             graft_children(tree, new_node, src, src_child);
         }
     }
+}
+
+/// JSON export mode (no TUI)
+fn run_json_export(root_path: PathBuf, exclude: Vec<String>) -> io::Result<()> {
+    let start = Instant::now();
+
+    // Try loading from cache first
+    let tree = if let Some(cached) = scanner::tree_cache::load_tree(&root_path) {
+        cached
+    } else {
+        // No cache, run fresh scan
+        let (tx, rx) = mpsc::channel();
+        let handle = scanner::walk::scan_directory(root_path.clone(), tx, exclude);
+
+        // Wait for scan to complete
+        loop {
+            match rx.recv_timeout(Duration::from_millis(100)) {
+                Ok(ScanProgress::Done) => break,
+                Ok(_) => continue,
+                Err(_) => break,
+            }
+        }
+
+        match handle.join() {
+            Ok(Some(tree)) => tree,
+            Ok(None) => {
+                eprintln!("Error: Scan failed");
+                std::process::exit(1);
+            }
+            Err(_) => {
+                eprintln!("Error: Scan thread panicked");
+                std::process::exit(1);
+            }
+        }
+    };
+
+    let scan_time_ms = start.elapsed().as_millis() as u64;
+
+    // Compute extension stats
+    let ext_stats = scanner::tree::compute_extension_stats(&tree);
+
+    // Compute top files
+    let mut top_files: Vec<(NodeId, u64)> = tree
+        .root
+        .descendants(&tree.arena)
+        .filter(|&nid| !tree.arena[nid].get().is_dir)
+        .map(|nid| (nid, tree.arena[nid].get().size))
+        .collect();
+    top_files.sort_by(|a, b| b.1.cmp(&a.1));
+    top_files.truncate(50);
+
+    // Find duplicates (optional, can be slow on large trees)
+    let duplicates = scanner::dupes::find_duplicates(&tree);
+
+    // Export to JSON
+    let json = json_export::export_json(
+        &tree,
+        &ext_stats,
+        &duplicates,
+        &top_files,
+        Some(scan_time_ms),
+    );
+    println!("{}", json);
+
+    Ok(())
 }

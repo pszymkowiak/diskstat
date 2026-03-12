@@ -81,6 +81,7 @@ pub struct Strings {
     pub sort_name_desc: &'static str,
     pub sort_age_newest: &'static str,
     pub sort_age_oldest: &'static str,
+    pub scanning_progress: &'static str, // "Scanning: {files} files ({size})"
 }
 
 /// Get strings for a specific language.
@@ -149,6 +150,7 @@ static EN: Strings = Strings {
     sort_name_desc: "Name Z→A",
     sort_age_newest: "Age Newest",
     sort_age_oldest: "Age Oldest",
+    scanning_progress: "Scanning",
 };
 
 static FR: Strings = Strings {
@@ -209,4 +211,5 @@ static FR: Strings = Strings {
     sort_name_desc: "Nom Z→A",
     sort_age_newest: "Plus récent",
     sort_age_oldest: "Plus ancien",
+    scanning_progress: "Analyse",
 };

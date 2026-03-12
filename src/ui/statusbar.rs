@@ -20,12 +20,28 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
                     .bg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             ));
-            spans.push(Span::raw(format!(
-                " {} {} | {} ",
+
+            // Progress bar: show file count and size
+            let progress_text = format!(
+                " {} {} ({}) ",
                 app.file_count,
                 app.strings.files,
                 ByteSize(app.total_size)
-            )));
+            );
+            spans.push(Span::raw(progress_text));
+
+            // Add animated progress indicator
+            let frame = (std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+                / 200)
+                % 8;
+            let progress_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"];
+            spans.push(Span::styled(
+                progress_chars[frame as usize],
+                Style::default().fg(Color::Yellow),
+            ));
         }
         ScanState::Done => {
             spans.push(Span::styled(
