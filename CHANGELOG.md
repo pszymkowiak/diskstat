@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/pszymkowiak/diskstat/compare/v0.2.0...v0.3.0) (2026-03-12)
+
+
+### Features
+
+* i18n (EN/FR), code dedup, doc comments, README architecture section ([8200916](https://github.com/pszymkowiak/diskstat/commit/82009166b8d9a1e9e678c156c013dbfcd1cb84f8))
+
 ## [0.2.0](https://github.com/pszymkowiak/diskstat/compare/v0.1.0...v0.2.0) (2026-03-12)
 
 
