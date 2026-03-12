@@ -12,7 +12,8 @@ pub fn compute_extension_stats(tree: &FileTree) -> Vec<ExtensionStats> {
         if !entry.is_dir {
             let ext = entry
                 .extension
-                .clone()
+                .as_ref()
+                .map(|s| s.to_string())
                 .unwrap_or_else(|| "(no ext)".to_string());
             let stat = ext_map.entry(ext).or_insert((0, 0));
             stat.0 += entry.size;
@@ -23,12 +24,14 @@ pub fn compute_extension_stats(tree: &FileTree) -> Vec<ExtensionStats> {
     let mut stats: Vec<ExtensionStats> = ext_map
         .into_iter()
         .enumerate()
-        .map(|(i, (extension, (total_size, file_count)))| ExtensionStats {
-            extension,
-            total_size,
-            file_count,
-            color: color_for_index(i),
-        })
+        .map(
+            |(i, (extension, (total_size, file_count)))| ExtensionStats {
+                extension,
+                total_size,
+                file_count,
+                color: color_for_index(i),
+            },
+        )
         .collect();
 
     stats.sort_by(|a, b| b.total_size.cmp(&a.total_size));

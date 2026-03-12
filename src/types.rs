@@ -3,6 +3,7 @@ use ratatui::style::Color;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 /// Arena-based file tree for memory-efficient storage.
 pub struct FileTree {
@@ -84,7 +85,9 @@ impl FileTree {
         });
 
         // Store in cache
-        self.sorted_cache.borrow_mut().insert(node_id, children.clone());
+        self.sorted_cache
+            .borrow_mut()
+            .insert(node_id, children.clone());
         children
     }
 
@@ -122,7 +125,7 @@ pub struct FileEntry {
     pub size: u64,
     pub file_count: u64,
     pub is_dir: bool,
-    pub extension: Option<String>,
+    pub extension: Option<Arc<str>>,
     pub depth: u16,
 }
 

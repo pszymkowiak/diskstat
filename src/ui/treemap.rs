@@ -1,15 +1,16 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
-use ratatui::Frame;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Borders};
+use ratatui::Frame;
 
 use indextree::NodeId;
 
 use crate::app::App;
-use crate::treemap_algo::{TreemapRect, squarify};
+use crate::treemap_algo::{squarify, TreemapRect};
 use crate::types::FileTree;
 use crate::ui::style::UiStyle;
 
@@ -43,15 +44,20 @@ fn label_fg(bg: Color) -> Color {
 }
 
 /// Get color for a file node based on its extension.
-fn ext_color(ext: &Option<String>, color_map: &HashMap<String, Color>) -> Color {
+fn ext_color(ext: &Option<Arc<str>>, color_map: &HashMap<String, Color>) -> Color {
     match ext {
-        Some(e) => color_map.get(e).copied().unwrap_or(Color::Rgb(120, 120, 120)),
+        Some(e) => color_map
+            .get(e.as_ref())
+            .copied()
+            .unwrap_or(Color::Rgb(120, 120, 120)),
         None => Color::Rgb(120, 120, 120),
     }
 }
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect, ui_style: &UiStyle) -> Vec<TreemapHit> {
-    let mut hits: Vec<TreemapHit> = Vec::new();
+    // Pre-allocate hits vector based on visible area (rough estimate: 1 hit per 100 cells)
+    let estimated_hits = ((area.width as usize * area.height as usize) / 100).max(100);
+    let mut hits: Vec<TreemapHit> = Vec::with_capacity(estimated_hits);
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -118,19 +124,21 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, ui_style: &UiStyle) -> Vec<Tre
 
     let buf = f.buffer_mut();
 
-    // Pass 1: fill colored cells recursively
+    // Pass 1: fill colored cells recursively AND collect hit regions
     for item in &layout {
         let child_node = children[item.index];
         let entry = tree.arena[child_node].get();
 
         if entry.is_dir {
-            fill_subtree(buf, inner, tree, child_node, item.rect, color_map, 1);
+            fill_subtree_and_collect_hits(
+                buf, inner, tree, child_node, item.rect, color_map, &mut hits, 1,
+            );
         } else {
             let color = ext_color(&entry.extension, color_map);
             fill_rect_bg(buf, inner, item.rect, color);
         }
 
-        // Record hit region
+        // Record hit region for top-level items
         let hx = (item.rect.x as u16).min(inner.width);
         let hy = (item.rect.y as u16).min(inner.height);
         let hw = (item.rect.w as u16).min(inner.width - hx);
@@ -149,7 +157,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, ui_style: &UiStyle) -> Vec<Tre
     for item in &layout {
         let child_node = children[item.index];
         let entry = tree.arena[child_node].get();
-        draw_label(buf, inner, item.rect, &entry.name, entry.size, &entry.extension, entry.is_dir, color_map);
+        draw_label(buf, inner, item.rect, &entry.name, entry.size);
     }
 
     // Pass 3: selection border
@@ -158,15 +166,6 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, ui_style: &UiStyle) -> Vec<Tre
         let child_node = children[item.index];
         if app.treemap_selected == Some(child_node) {
             draw_selection_border(buf, inner, item.rect, ui_style);
-        }
-    }
-
-    // Collect subtree hits for mouse click on nested files
-    for item in &layout {
-        let child_node = children[item.index];
-        let entry = tree.arena[child_node].get();
-        if entry.is_dir {
-            collect_subtree_hits(tree, child_node, item.rect, inner, &mut hits, 1);
         }
     }
 
@@ -193,14 +192,17 @@ fn fill_rect_bg(buf: &mut Buffer, inner: Rect, r: TreemapRect, color: Color) {
     }
 }
 
-/// Recursively fill a directory's children into its rect.
-fn fill_subtree(
+/// Recursively fill a directory's children into its rect AND collect hit regions.
+/// This merged function avoids redundant squarify calls (was called twice before).
+#[allow(clippy::too_many_arguments)]
+fn fill_subtree_and_collect_hits(
     buf: &mut Buffer,
     inner: Rect,
     tree: &FileTree,
     node_id: NodeId,
     parent_rect: TreemapRect,
     color_map: &HashMap<String, Color>,
+    hits: &mut Vec<TreemapHit>,
     depth: u32,
 ) {
     // Skip rects too small to see
@@ -240,11 +242,33 @@ fn fill_subtree(
         let entry = tree.arena[child_node].get();
 
         if entry.is_dir {
-            fill_subtree(buf, inner, tree, child_node, item.rect, color_map, depth + 1);
+            fill_subtree_and_collect_hits(
+                buf,
+                inner,
+                tree,
+                child_node,
+                item.rect,
+                color_map,
+                hits,
+                depth + 1,
+            );
         } else {
             let color = ext_color(&entry.extension, color_map);
             fill_rect_bg(buf, inner, item.rect, color);
         }
+
+        // Collect hit region for this child
+        let rx = (item.rect.x as u16).min(inner.width);
+        let ry = (item.rect.y as u16).min(inner.height);
+        let rw = (item.rect.w as u16).min(inner.width - rx);
+        let rh = (item.rect.h as u16).min(inner.height - ry);
+        hits.push(TreemapHit {
+            node_id: child_node,
+            x: inner.x + rx,
+            y: inner.y + ry,
+            w: rw,
+            h: rh,
+        });
     }
 }
 
@@ -274,16 +298,7 @@ fn dominant_color(tree: &FileTree, node_id: NodeId, color_map: &HashMap<String, 
 }
 
 /// Draw a label on a rectangle if it's large enough.
-fn draw_label(
-    buf: &mut Buffer,
-    inner: Rect,
-    r: TreemapRect,
-    name: &str,
-    size: u64,
-    _extension: &Option<String>,
-    _is_dir: bool,
-    _color_map: &HashMap<String, Color>,
-) {
+fn draw_label(buf: &mut Buffer, inner: Rect, r: TreemapRect, name: &str, size: u64) {
     let rw = r.w as u16;
     let rh = r.h as u16;
 
@@ -338,62 +353,6 @@ fn draw_label(
             }
         }
     }
-
-}
-
-// ─── Hit regions ──────────────────────────────────────────────
-
-fn collect_subtree_hits(
-    tree: &FileTree,
-    node_id: NodeId,
-    parent_rect: TreemapRect,
-    inner: Rect,
-    hits: &mut Vec<TreemapHit>,
-    depth: u32,
-) {
-    if depth >= MAX_DEPTH || parent_rect.w < 1.0 || parent_rect.h < 1.0 {
-        return;
-    }
-
-    let children = tree.sorted_children(node_id);
-    let sizes: Vec<(usize, f64)> = children
-        .iter()
-        .enumerate()
-        .filter_map(|(i, &nid)| {
-            let size = tree.arena[nid].get().size;
-            if size > 0 {
-                Some((i, size as f64))
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    if sizes.is_empty() {
-        return;
-    }
-
-    let layout = squarify(parent_rect, &sizes);
-
-    for item in &layout {
-        let child_node = children[item.index];
-        let rx = (item.rect.x as u16).min(inner.width);
-        let ry = (item.rect.y as u16).min(inner.height);
-        let rw = (item.rect.w as u16).min(inner.width - rx);
-        let rh = (item.rect.h as u16).min(inner.height - ry);
-        hits.push(TreemapHit {
-            node_id: child_node,
-            x: inner.x + rx,
-            y: inner.y + ry,
-            w: rw,
-            h: rh,
-        });
-
-        let entry = tree.arena[child_node].get();
-        if entry.is_dir {
-            collect_subtree_hits(tree, child_node, item.rect, inner, hits, depth + 1);
-        }
-    }
 }
 
 // ─── Selection border ─────────────────────────────────────────
@@ -404,7 +363,9 @@ fn draw_selection_border(buf: &mut Buffer, area: Rect, rect: TreemapRect, ui_sty
     let x_end = ((rect.x + rect.w) as u16).min(area.width);
     let y_end = ((rect.y + rect.h) as u16).min(area.height);
 
-    let style = Style::default().fg(Color::White).bg(Color::Rgb(255, 255, 255));
+    let style = Style::default()
+        .fg(Color::White)
+        .bg(Color::Rgb(255, 255, 255));
 
     // Top and bottom edges
     for x in x_start..x_end {
@@ -448,10 +409,20 @@ fn draw_selection_border(buf: &mut Buffer, area: Rect, rect: TreemapRect, ui_sty
     };
     set_corner(buf, area.x + x_start, area.y + y_start, ui_style.sel_tl);
     if x_end > 0 {
-        set_corner(buf, area.x + x_end.saturating_sub(1), area.y + y_start, ui_style.sel_tr);
+        set_corner(
+            buf,
+            area.x + x_end.saturating_sub(1),
+            area.y + y_start,
+            ui_style.sel_tr,
+        );
     }
     if y_end > 0 {
-        set_corner(buf, area.x + x_start, area.y + y_end.saturating_sub(1), ui_style.sel_bl);
+        set_corner(
+            buf,
+            area.x + x_start,
+            area.y + y_end.saturating_sub(1),
+            ui_style.sel_bl,
+        );
     }
     if x_end > 0 && y_end > 0 {
         set_corner(

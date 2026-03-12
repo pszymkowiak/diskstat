@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 
 use super::walk::DirChild;
 
@@ -171,7 +171,12 @@ impl ScanCache {
             dir_stmt.execute(params![path, sec, nsec])?;
             del_stmt.execute(params![path])?;
             for child in children {
-                ins_stmt.execute(params![path, &child.name, child.is_dir as i32, child.size as i64])?;
+                ins_stmt.execute(params![
+                    path,
+                    &child.name,
+                    child.is_dir as i32,
+                    child.size as i64
+                ])?;
             }
         }
 

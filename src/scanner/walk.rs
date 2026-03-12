@@ -1,6 +1,7 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 
 #[cfg(unix)]
@@ -35,6 +36,8 @@ struct ScanContext {
     cache: Option<ScanCache>,
     /// Pending cache writes (locked only for push).
     pending: Mutex<Vec<PendingWrite>>,
+    /// Extension string intern table (reduces memory for extensions).
+    extension_intern: Mutex<HashMap<String, Arc<str>>>,
 }
 
 pub fn scan_directory(
@@ -65,6 +68,7 @@ pub fn scan_directory(
             total_size: AtomicU64::new(0),
             cache,
             pending: Mutex::new(Vec::new()),
+            extension_intern: Mutex::new(HashMap::new()),
         });
 
         // Progress reporter
@@ -72,18 +76,16 @@ pub fn scan_directory(
         let ptx = progress_tx.clone();
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
 
-        let progress_thread = thread::spawn(move || {
-            loop {
-                match stop_rx.try_recv() {
-                    Ok(()) | Err(mpsc::TryRecvError::Disconnected) => break,
-                    Err(mpsc::TryRecvError::Empty) => {}
-                }
-                let _ = ptx.send(ScanProgress::Tick {
-                    file_count: ctx2.file_count.load(Ordering::Relaxed),
-                    total_size: ctx2.total_size.load(Ordering::Relaxed),
-                });
-                thread::sleep(std::time::Duration::from_millis(80));
+        let progress_thread = thread::spawn(move || loop {
+            match stop_rx.try_recv() {
+                Ok(()) | Err(mpsc::TryRecvError::Disconnected) => break,
+                Err(mpsc::TryRecvError::Empty) => {}
             }
+            let _ = ptx.send(ScanProgress::Tick {
+                file_count: ctx2.file_count.load(Ordering::Relaxed),
+                total_size: ctx2.total_size.load(Ordering::Relaxed),
+            });
+            thread::sleep(std::time::Duration::from_millis(80));
         });
 
         // Parallel recursive scan
@@ -148,7 +150,7 @@ fn scan_dir_recursive(ctx: &ScanContext, dir_path: &Path, parent_id: NodeId, dep
         let mut arena = ctx.arena.lock().unwrap();
         for child in &children {
             let extension = if !child.is_dir {
-                extension_from_name(&child.name)
+                extension_from_name(&child.name).map(|ext| intern_extension(ctx, ext))
             } else {
                 None
             };
@@ -204,6 +206,15 @@ fn extension_from_name(name: &str) -> Option<String> {
     Some(name[dot_pos + 1..].to_lowercase())
 }
 
+/// Intern an extension string to share Arc<str> across all files with same extension.
+fn intern_extension(ctx: &ScanContext, ext_str: String) -> Arc<str> {
+    let mut intern_table = ctx.extension_intern.lock().unwrap();
+    intern_table
+        .entry(ext_str.clone())
+        .or_insert_with(|| Arc::from(ext_str.as_str()))
+        .clone()
+}
+
 // ── Platform-specific directory reading ──────────────────────────────────────
 
 #[cfg(target_os = "macos")]
@@ -234,12 +245,19 @@ fn read_dir_fallback(path: &Path) -> Result<Vec<DirChild>, std::io::Error> {
         let size = if is_dir {
             0
         } else {
-            entry.metadata().map(|m| {
-                #[cfg(unix)]
-                { m.blocks() * 512 }
-                #[cfg(not(unix))]
-                { m.len() }
-            }).unwrap_or(0)
+            entry
+                .metadata()
+                .map(|m| {
+                    #[cfg(unix)]
+                    {
+                        m.blocks() * 512
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        m.len()
+                    }
+                })
+                .unwrap_or(0)
         };
         let name = entry.file_name().to_string_lossy().to_string();
         children.push(DirChild { name, is_dir, size });
@@ -294,7 +312,9 @@ fn read_dir_bulk_macos(path: &Path) -> Result<Vec<DirChild>, std::io::Error> {
     struct FdGuard(c_int);
     impl Drop for FdGuard {
         fn drop(&mut self) {
-            unsafe { libc::close(self.0); }
+            unsafe {
+                libc::close(self.0);
+            }
         }
     }
     let _guard = FdGuard(fd);

@@ -1,13 +1,13 @@
-pub mod treemap;
-pub mod file_tree;
-pub mod extensions;
-pub mod statusbar;
 pub mod dialogs;
-pub mod style;
+pub mod extensions;
+pub mod file_tree;
 pub mod menu;
+pub mod statusbar;
+pub mod style;
+pub mod treemap;
 
-use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::Frame;
 
 use crate::app::{ActiveTab, App};
 use crate::ui::style::style_by_index;
@@ -20,7 +20,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let main_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),  // menu bar
+            Constraint::Length(1), // menu bar
             Constraint::Min(10),   // content
             Constraint::Length(1), // status bar
         ])
@@ -54,7 +54,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     menu::draw_dropdown(f, app, menu_bar_area, &ui_style);
 }
 
-fn draw_tree_map_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect, ui_style: &style::UiStyle) {
+fn draw_tree_map_tab(
+    f: &mut Frame,
+    app: &mut App,
+    area: ratatui::layout::Rect,
+    ui_style: &style::UiStyle,
+) {
     // Below: extension summary
     let vert_chunks = Layout::default()
         .direction(Direction::Vertical)

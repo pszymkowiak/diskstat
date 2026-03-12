@@ -1,9 +1,10 @@
 use bytesize::ByteSize;
-use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::Frame;
+use std::borrow::Cow;
 
 use crate::app::App;
 use crate::ui::style::UiStyle;
@@ -90,10 +91,10 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
         let meta_len = size_str.len() + pct_str.len() + bar.len() + 4;
         let prefix_len = prefix.chars().count() + indicator.chars().count();
         let name_max = visible_width.saturating_sub(prefix_len + meta_len);
-        let name = if entry.name.len() > name_max {
-            format!("{}~", &entry.name[..name_max.saturating_sub(1)])
+        let name: Cow<str> = if entry.name.len() > name_max {
+            Cow::Owned(format!("{}~", &entry.name[..name_max.saturating_sub(1)]))
         } else {
-            entry.name.clone()
+            Cow::Borrowed(&entry.name)
         };
 
         // Pad name to align columns
@@ -121,7 +122,10 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
         let line = Line::from(vec![
             Span::styled(format!("{}{}", prefix, indicator), node_style),
             Span::styled(name_padded, node_style),
-            Span::styled(format!(" {} ", size_str), Style::default().fg(style.fg_accent)),
+            Span::styled(
+                format!(" {} ", size_str),
+                Style::default().fg(style.fg_accent),
+            ),
             Span::styled(pct_str, Style::default().fg(pct_color)),
             Span::styled(format!(" {}", bar), Style::default().fg(pct_color)),
         ]);

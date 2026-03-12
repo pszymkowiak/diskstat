@@ -1,9 +1,9 @@
 use bytesize::ByteSize;
-use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
+use ratatui::Frame;
 
 use crate::app::{App, ScanState};
 use crate::ui::style::UiStyle;
@@ -56,10 +56,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
         } else {
             0
         };
-        spans.push(Span::styled(
-            " | ",
-            Style::default().fg(Color::DarkGray),
-        ));
+        spans.push(Span::styled(" | ", Style::default().fg(Color::DarkGray)));
         spans.push(Span::styled(
             format!(
                 "Disk: {} free / {} ({}% used)",
@@ -76,10 +73,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
         if let Some(tree) = &app.tree {
             let entry = tree.arena[selected].get();
             let path = tree.full_path(selected);
-            spans.push(Span::styled(
-                " | ",
-                Style::default().fg(Color::DarkGray),
-            ));
+            spans.push(Span::styled(" | ", Style::default().fg(Color::DarkGray)));
             spans.push(Span::styled(
                 format!("{}", path.display()),
                 Style::default().fg(style.fg_accent),
@@ -90,11 +84,11 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
 
     // Status message
     if let Some(msg) = &app.status_message {
+        spans.push(Span::styled(" | ", Style::default().fg(Color::DarkGray)));
         spans.push(Span::styled(
-            " | ",
-            Style::default().fg(Color::DarkGray),
+            msg.clone(),
+            Style::default().fg(Color::Yellow),
         ));
-        spans.push(Span::styled(msg.clone(), Style::default().fg(Color::Yellow)));
     }
 
     // Right-aligned help hint
@@ -102,10 +96,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
     let used: usize = spans.iter().map(|s| s.content.len()).sum();
     let remaining = (area.width as usize).saturating_sub(used + hint.len());
     spans.push(Span::raw(" ".repeat(remaining)));
-    spans.push(Span::styled(
-        hint,
-        Style::default().fg(Color::DarkGray),
-    ));
+    spans.push(Span::styled(hint, Style::default().fg(Color::DarkGray)));
 
     let line = Line::from(spans);
     let bar = Paragraph::new(line).style(Style::default().bg(style.statusbar_bg));

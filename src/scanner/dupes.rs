@@ -28,10 +28,7 @@ pub fn find_duplicates(tree: &FileTree) -> Vec<DuplicateGroup> {
         let entry = tree.arena[node_id].get();
         if !entry.is_dir && entry.size > 0 {
             let path = tree.full_path(node_id);
-            size_groups
-                .entry(entry.size)
-                .or_default()
-                .push(path);
+            size_groups.entry(entry.size).or_default().push(path);
         }
     }
 

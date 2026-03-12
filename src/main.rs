@@ -17,31 +17,36 @@ use crossterm::event::{
 };
 use crossterm::execute;
 use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use ratatui::Terminal;
 
 use app::{ActivePane, ActiveTab, App, ScanState};
 use scanner::debug_log::DebugLog;
-use ui::menu::{MenuAction, self};
+use ui::menu::{self, MenuAction};
 
 fn main() -> io::Result<()> {
     // Open global debug log
     let dlog = DebugLog::open().ok();
 
     // Parse arguments — fall back to last scanned path if no arg given
-    let root_path = env::args().nth(1).map(PathBuf::from).or_else(|| {
-        dlog.as_ref().and_then(|d| d.get_last_scanned())
-    }).unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let root_path = env::args()
+        .nth(1)
+        .map(PathBuf::from)
+        .or_else(|| dlog.as_ref().and_then(|d| d.get_last_scanned()))
+        .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
     let root_path = root_path.canonicalize().unwrap_or(root_path);
 
     if let Some(ref d) = dlog {
-        d.log_json("app_start", &[
-            ("root_path", &root_path.to_string_lossy()),
-            ("args", &env::args().collect::<Vec<_>>().join(" ")),
-        ]);
+        d.log_json(
+            "app_start",
+            &[
+                ("root_path", &root_path.to_string_lossy()),
+                ("args", &env::args().collect::<Vec<_>>().join(" ")),
+            ],
+        );
     }
 
     // Setup terminal
@@ -82,11 +87,17 @@ fn run_app(
         let elapsed = start.elapsed();
         let node_count = tree.arena.count();
         if let Some(ref d) = dlog {
-            d.log_json("cache_load_ok", &[
-                ("root_path", &root_path.to_string_lossy()),
-                ("nodes", &node_count.to_string()),
-                ("elapsed_ms", &format!("{:.1}", elapsed.as_secs_f64() * 1000.0)),
-            ]);
+            d.log_json(
+                "cache_load_ok",
+                &[
+                    ("root_path", &root_path.to_string_lossy()),
+                    ("nodes", &node_count.to_string()),
+                    (
+                        "elapsed_ms",
+                        &format!("{:.1}", elapsed.as_secs_f64() * 1000.0),
+                    ),
+                ],
+            );
             d.set_last_scanned(&root_path);
         }
         app.tree = Some(tree);
@@ -97,10 +108,16 @@ fn run_app(
     } else {
         let elapsed = start.elapsed();
         if let Some(ref d) = dlog {
-            d.log_json("cache_load_miss", &[
-                ("root_path", &root_path.to_string_lossy()),
-                ("elapsed_ms", &format!("{:.1}", elapsed.as_secs_f64() * 1000.0)),
-            ]);
+            d.log_json(
+                "cache_load_miss",
+                &[
+                    ("root_path", &root_path.to_string_lossy()),
+                    (
+                        "elapsed_ms",
+                        &format!("{:.1}", elapsed.as_secs_f64() * 1000.0),
+                    ),
+                ],
+            );
         }
         let (progress_tx, progress_rx) = mpsc::channel();
         app.progress_rx = Some(progress_rx);
@@ -109,7 +126,10 @@ fn run_app(
         if let Some(ref d) = dlog {
             d.log_json("scan_start", &[("root_path", &root_path.to_string_lossy())]);
         }
-        Some(scanner::walk::scan_directory(root_path.clone(), progress_tx))
+        Some(scanner::walk::scan_directory(
+            root_path.clone(),
+            progress_tx,
+        ))
     };
 
     loop {
@@ -128,11 +148,14 @@ fn run_app(
                         let _ = scanner::tree_cache::save_tree(&tree);
 
                         if let Some(ref d) = dlog {
-                            d.log_json("scan_complete", &[
-                                ("root_path", &tree.root_path.to_string_lossy()),
-                                ("nodes", &node_count.to_string()),
-                                ("total_size", &root_size.to_string()),
-                            ]);
+                            d.log_json(
+                                "scan_complete",
+                                &[
+                                    ("root_path", &tree.root_path.to_string_lossy()),
+                                    ("nodes", &node_count.to_string()),
+                                    ("total_size", &root_size.to_string()),
+                                ],
+                            );
                             d.set_last_scanned(&tree.root_path);
                         }
 
@@ -183,9 +206,7 @@ fn run_app(
                         }
                         InputAction::Rescan(new_path) => {
                             if let Some(ref d) = dlog {
-                                d.log_json("rescan", &[
-                                    ("root_path", &new_path.to_string_lossy()),
-                                ]);
+                                d.log_json("rescan", &[("root_path", &new_path.to_string_lossy())]);
                             }
                             app.reset_for_scan(new_path.clone());
                             let (tx, rx) = mpsc::channel();
@@ -195,9 +216,10 @@ fn run_app(
                         }
                         InputAction::ForceRescan(path) => {
                             if let Some(ref d) = dlog {
-                                d.log_json("force_rescan", &[
-                                    ("root_path", &path.to_string_lossy()),
-                                ]);
+                                d.log_json(
+                                    "force_rescan",
+                                    &[("root_path", &path.to_string_lossy())],
+                                );
                             }
                             // Invalidate both caches then rescan
                             scanner::tree_cache::invalidate(&path);
@@ -212,18 +234,21 @@ fn run_app(
                         }
                         InputAction::SubtreeRescan(target_node, subtree_path) => {
                             if let Some(ref d) = dlog {
-                                d.log_json("subtree_rescan", &[
-                                    ("path", &subtree_path.to_string_lossy()),
-                                ]);
+                                d.log_json(
+                                    "subtree_rescan",
+                                    &[("path", &subtree_path.to_string_lossy())],
+                                );
                             }
-                            app.status_message = Some(format!("Rescanning {}...", subtree_path.display()));
+                            app.status_message =
+                                Some(format!("Rescanning {}...", subtree_path.display()));
                             // Perform subtree rescan synchronously (blocking)
                             let (tx, _rx) = mpsc::channel();
                             let handle = scanner::walk::scan_directory(subtree_path, tx);
                             if let Ok(Some(mini_tree)) = handle.join() {
                                 if let Some(tree) = &mut app.tree {
                                     // Remove old children of target node
-                                    let old_children: Vec<_> = target_node.children(&tree.arena).collect();
+                                    let old_children: Vec<_> =
+                                        target_node.children(&tree.arena).collect();
                                     for child in old_children {
                                         child.detach(&mut tree.arena);
                                     }
@@ -341,36 +366,32 @@ fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputA
         }
 
         // Tree navigation
-        KeyCode::Up | KeyCode::Char('k') => {
-            match app.active_tab {
-                ActiveTab::TreeMap => app.tree_up(),
-                ActiveTab::Extensions => {
-                    if app.ext_selected_index > 0 {
-                        app.ext_selected_index -= 1;
-                    }
-                }
-                ActiveTab::Duplicates => {
-                    if app.dupes_selected_index > 0 {
-                        app.dupes_selected_index -= 1;
-                    }
+        KeyCode::Up | KeyCode::Char('k') => match app.active_tab {
+            ActiveTab::TreeMap => app.tree_up(),
+            ActiveTab::Extensions => {
+                if app.ext_selected_index > 0 {
+                    app.ext_selected_index -= 1;
                 }
             }
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            match app.active_tab {
-                ActiveTab::TreeMap => app.tree_down(),
-                ActiveTab::Extensions => {
-                    if app.ext_selected_index + 1 < app.ext_stats.len() {
-                        app.ext_selected_index += 1;
-                    }
-                }
-                ActiveTab::Duplicates => {
-                    if app.dupes_selected_index + 1 < app.duplicates.len() {
-                        app.dupes_selected_index += 1;
-                    }
+            ActiveTab::Duplicates => {
+                if app.dupes_selected_index > 0 {
+                    app.dupes_selected_index -= 1;
                 }
             }
-        }
+        },
+        KeyCode::Down | KeyCode::Char('j') => match app.active_tab {
+            ActiveTab::TreeMap => app.tree_down(),
+            ActiveTab::Extensions => {
+                if app.ext_selected_index + 1 < app.ext_stats.len() {
+                    app.ext_selected_index += 1;
+                }
+            }
+            ActiveTab::Duplicates => {
+                if app.dupes_selected_index + 1 < app.duplicates.len() {
+                    app.dupes_selected_index += 1;
+                }
+            }
+        },
         KeyCode::Left | KeyCode::Char('h') => app.tree_collapse(),
         KeyCode::Right | KeyCode::Char('l') => app.tree_expand(),
 
@@ -414,10 +435,8 @@ fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputA
                     let dupes = scanner::dupes::find_duplicates(tree);
                     app.duplicates = dupes;
                     app.dupes_scanning = false;
-                    app.status_message = Some(format!(
-                        "Found {} duplicate groups",
-                        app.duplicates.len()
-                    ));
+                    app.status_message =
+                        Some(format!("Found {} duplicate groups", app.duplicates.len()));
                 }
             }
         }
@@ -561,9 +580,7 @@ fn dispatch_menu_action(app: &mut App, action: MenuAction) -> InputAction {
             app.open_path_input();
             InputAction::Continue
         }
-        MenuAction::Rescan => {
-            InputAction::ForceRescan(app.root_path.clone())
-        }
+        MenuAction::Rescan => InputAction::ForceRescan(app.root_path.clone()),
         MenuAction::ExportCsv => {
             if let Some(tree) = &app.tree {
                 match actions::export_csv(tree) {
@@ -737,11 +754,7 @@ fn handle_mouse(app: &mut App, mouse: crossterm::event::MouseEvent) {
 
             // Hit-test treemap: iterate in reverse (last = smallest/deepest rectangle)
             for hit in app.treemap_hits.iter().rev() {
-                if mx >= hit.x
-                    && mx < hit.x + hit.w
-                    && my >= hit.y
-                    && my < hit.y + hit.h
-                {
+                if mx >= hit.x && mx < hit.x + hit.w && my >= hit.y && my < hit.y + hit.h {
                     app.expand_to_node(hit.node_id);
                     break;
                 }

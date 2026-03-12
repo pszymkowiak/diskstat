@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use indextree::NodeId;
 
@@ -50,7 +51,7 @@ pub fn save_tree(tree: &FileTree) -> io::Result<()> {
         w.write_all(&[entry.is_dir as u8])?;
 
         if let Some(ref ext) = entry.extension {
-            let ext_bytes = ext.as_bytes();
+            let ext_bytes = ext.as_ref().as_bytes();
             write_u16(&mut w, ext_bytes.len() as u16)?;
             w.write_all(ext_bytes)?;
         } else {
@@ -112,7 +113,8 @@ pub fn load_tree(root_path: &Path) -> Option<FileTree> {
         let extension = if ext_len > 0 {
             let mut ext_buf = vec![0u8; ext_len];
             r.read_exact(&mut ext_buf).ok()?;
-            Some(String::from_utf8(ext_buf).unwrap_or_default())
+            let ext_string = String::from_utf8(ext_buf).unwrap_or_default();
+            Some(Arc::from(ext_string.as_str()))
         } else {
             None
         };

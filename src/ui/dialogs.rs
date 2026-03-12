@@ -1,9 +1,9 @@
 use bytesize::ByteSize;
-use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
+use ratatui::Frame;
 
 use crate::app::App;
 use crate::ui::style::UiStyle;
@@ -109,7 +109,9 @@ pub fn draw_help(f: &mut Frame, style: &UiStyle) {
         .title(" Help ")
         .border_style(Style::default().fg(style.fg_accent));
 
-    let paragraph = Paragraph::new(help_text).block(block).wrap(Wrap { trim: false });
+    let paragraph = Paragraph::new(help_text)
+        .block(block)
+        .wrap(Wrap { trim: false });
     f.render_widget(paragraph, area);
 }
 
@@ -124,9 +126,7 @@ pub fn draw_confirm_delete(f: &mut Frame, app: &App, style: &UiStyle) {
             Line::from(""),
             Line::from(Span::styled(
                 " Are you sure you want to delete? ",
-                Style::default()
-                    .fg(Color::Red)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             )),
             Line::from(""),
             Line::from(Span::styled(
@@ -139,9 +139,17 @@ pub fn draw_confirm_delete(f: &mut Frame, app: &App, style: &UiStyle) {
             )),
             Line::from(""),
             Line::from(vec![
-                Span::styled("  y ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "  y ",
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::raw("Confirm   "),
-                Span::styled("  n ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "  n ",
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ),
                 Span::raw("Cancel"),
             ]),
         ];
@@ -165,8 +173,7 @@ pub fn draw_duplicates(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
         .border_style(Style::default().fg(style.border_color));
 
     if app.dupes_scanning {
-        let text = Paragraph::new("Scanning for duplicates...")
-            .block(block);
+        let text = Paragraph::new("Scanning for duplicates...").block(block);
         f.render_widget(text, area);
         return;
     }
@@ -242,7 +249,11 @@ pub fn draw_path_input(f: &mut Frame, app: &App, style: &UiStyle) {
         f.render_widget(Clear, area);
 
         let is_valid = input.validate().is_some();
-        let border_color = if is_valid { Color::Green } else { Color::Yellow };
+        let border_color = if is_valid {
+            Color::Green
+        } else {
+            Color::Yellow
+        };
 
         let block = Block::default()
             .borders(Borders::ALL)
@@ -266,7 +277,12 @@ pub fn draw_path_input(f: &mut Frame, app: &App, style: &UiStyle) {
         };
 
         let input_line = Line::from(vec![
-            Span::styled("  Path: ", Style::default().fg(style.fg_accent).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "  Path: ",
+                Style::default()
+                    .fg(style.fg_accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(before_cursor, Style::default().fg(Color::White)),
             Span::styled(
                 at_cursor,
@@ -321,7 +337,12 @@ pub fn draw_search_input(f: &mut Frame, app: &App) {
 
         let cursor_char = if input.is_empty() { " " } else { "" };
         let line = Line::from(vec![
-            Span::styled("/", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "/",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(input.as_str(), Style::default().fg(Color::White)),
             Span::styled(
                 cursor_char,

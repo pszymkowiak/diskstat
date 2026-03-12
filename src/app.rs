@@ -97,10 +97,10 @@ pub struct App {
     pub current_style_index: usize,
 
     // Split & treemap visibility
-    pub split_pct: u16,         // 0-100, percentage of left panel (default: 40)
-    pub show_treemap: bool,     // true = treemap visible, false = tree takes 100%
-    pub dragging_split: bool,   // true while mouse-dragging the separator
-    pub last_split_x: u16,      // x-coordinate of the separator (updated during draw)
+    pub split_pct: u16,       // 0-100, percentage of left panel (default: 40)
+    pub show_treemap: bool,   // true = treemap visible, false = tree takes 100%
+    pub dragging_split: bool, // true while mouse-dragging the separator
+    pub last_split_x: u16,    // x-coordinate of the separator (updated during draw)
     pub content_area: ratatui::layout::Rect, // content area (for mouse→pct conversion)
 
     // Rendering
@@ -260,7 +260,14 @@ impl App {
             let root = tree.root;
             let expanded = &self.tree_state.expanded;
             let mut guide = Vec::new();
-            collect_visible_into(tree, root, 0, &mut guide, expanded, &mut self.tree_state.visible_nodes);
+            collect_visible_into(
+                tree,
+                root,
+                0,
+                &mut guide,
+                expanded,
+                &mut self.tree_state.visible_nodes,
+            );
         }
     }
 
@@ -377,9 +384,7 @@ impl App {
 
     /// Open the path input dialog pre-filled with the current root.
     pub fn open_path_input(&mut self) {
-        self.path_input = Some(PathInput::new(
-            self.root_path.to_string_lossy().to_string(),
-        ));
+        self.path_input = Some(PathInput::new(self.root_path.to_string_lossy().to_string()));
     }
 
     /// Expand the tree so a given node becomes visible and selected.
@@ -426,9 +431,7 @@ impl App {
         if !self.search_matches.is_empty() {
             let target = self.search_matches[0];
             self.expand_to_node(target);
-            self.status_message = Some(format!(
-                "Match 1/{}", self.search_matches.len()
-            ));
+            self.status_message = Some(format!("Match 1/{}", self.search_matches.len()));
         } else {
             self.status_message = Some("No matches found".to_string());
         }
@@ -586,16 +589,17 @@ impl PathInput {
 
         // Build completions from filesystem
         let path = PathBuf::from(&self.input);
-        let (dir, prefix) = if self.input.ends_with('/') || self.input.ends_with(std::path::MAIN_SEPARATOR) {
-            (path.clone(), String::new())
-        } else {
-            let parent = path.parent().unwrap_or_else(|| std::path::Path::new("/"));
-            let prefix = path
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default();
-            (parent.to_path_buf(), prefix)
-        };
+        let (dir, prefix) =
+            if self.input.ends_with('/') || self.input.ends_with(std::path::MAIN_SEPARATOR) {
+                (path.clone(), String::new())
+            } else {
+                let parent = path.parent().unwrap_or_else(|| std::path::Path::new("/"));
+                let prefix = path
+                    .file_name()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                (parent.to_path_buf(), prefix)
+            };
 
         if let Ok(entries) = std::fs::read_dir(&dir) {
             let mut matches: Vec<String> = Vec::new();

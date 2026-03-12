@@ -1,11 +1,11 @@
-use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+use ratatui::Frame;
 
 use crate::app::{ActiveTab, App, MenuState};
-use crate::ui::style::{UiStyle, all_styles};
+use crate::ui::style::{all_styles, UiStyle};
 
 /// Menu action returned after a menu item is selected.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,9 +182,7 @@ pub fn draw_menu_bar(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
                 .bg(style.menu_active_bg)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default()
-                .fg(style.menu_fg)
-                .bg(style.menu_bg)
+            Style::default().fg(style.menu_fg).bg(style.menu_bg)
         };
         spans.push(Span::styled(label, s));
     }
@@ -199,7 +197,9 @@ pub fn draw_menu_bar(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
     ));
 
     // Highlight the active tab indicator
-    let tab_s = Style::default().fg(style.menu_shortcut_fg).bg(style.menu_bg);
+    let tab_s = Style::default()
+        .fg(style.menu_shortcut_fg)
+        .bg(style.menu_bg);
     let active_tab_s = Style::default()
         .fg(style.menu_fg)
         .bg(style.menu_bg)
@@ -220,7 +220,9 @@ pub fn draw_menu_bar(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
     }
     spans.push(Span::styled(
         " [?]Help ",
-        Style::default().fg(style.menu_shortcut_fg).bg(style.menu_bg),
+        Style::default()
+            .fg(style.menu_shortcut_fg)
+            .bg(style.menu_bg),
     ));
 
     let line = Line::from(spans);
@@ -291,7 +293,9 @@ pub fn draw_dropdown(f: &mut Frame, app: &App, menu_bar_area: Rect, style: &UiSt
             MenuItemKind::Separator => {
                 let sep_line = Line::from(Span::styled(
                     "──────────────────────",
-                    Style::default().fg(style.menu_drop_fg).bg(style.menu_drop_bg),
+                    Style::default()
+                        .fg(style.menu_drop_fg)
+                        .bg(style.menu_drop_bg),
                 ));
                 lines.push(sep_line);
             }
@@ -317,7 +321,10 @@ pub fn draw_dropdown(f: &mut Frame, app: &App, menu_bar_area: Rect, style: &UiSt
         .border_style(Style::default().fg(style.border_color));
 
     let inner = block.inner(dropdown_area);
-    f.render_widget(block.style(Style::default().bg(style.menu_drop_bg)), dropdown_area);
+    f.render_widget(
+        block.style(Style::default().bg(style.menu_drop_bg)),
+        dropdown_area,
+    );
 
     // Render each line, padded to dropdown width
     let buf = f.buffer_mut();
@@ -368,10 +375,7 @@ fn render_menu_item<'a>(
             Style::default().fg(fg).bg(bg),
         ));
     } else {
-        spans.push(Span::styled(
-            "  ",
-            Style::default().fg(fg).bg(bg),
-        ));
+        spans.push(Span::styled("  ", Style::default().fg(fg).bg(bg)));
     }
 
     spans.push(Span::styled(

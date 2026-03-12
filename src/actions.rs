@@ -26,11 +26,9 @@ pub fn delete_path(path: &Path) -> Result<(), String> {
         _ => {
             // Fallback: direct delete
             if path.is_dir() {
-                fs::remove_dir_all(path)
-                    .map_err(|e| format!("Failed to delete directory: {}", e))
+                fs::remove_dir_all(path).map_err(|e| format!("Failed to delete directory: {}", e))
             } else {
-                fs::remove_file(path)
-                    .map_err(|e| format!("Failed to delete file: {}", e))
+                fs::remove_file(path).map_err(|e| format!("Failed to delete file: {}", e))
             }
         }
     }
@@ -49,20 +47,26 @@ pub fn export_csv(tree: &FileTree) -> Result<String, String> {
         .unwrap_or(0);
     let filename = format!("diskstat-{}.csv", timestamp);
 
-    let file = fs::File::create(&filename)
-        .map_err(|e| format!("Failed to create {}: {}", filename, e))?;
+    let file =
+        fs::File::create(&filename).map_err(|e| format!("Failed to create {}: {}", filename, e))?;
     let mut w = std::io::BufWriter::new(file);
 
-    writeln!(w, "path,size,is_dir,extension")
-        .map_err(|e| format!("Write error: {}", e))?;
+    writeln!(w, "path,size,is_dir,extension").map_err(|e| format!("Write error: {}", e))?;
 
     for nid in tree.root.descendants(&tree.arena) {
         let path = tree.full_path(nid);
         let entry = tree.arena[nid].get();
         let path_str = escape_csv(&path.to_string_lossy());
         let ext = entry.extension.as_deref().unwrap_or("");
-        writeln!(w, "{},{},{},{}", path_str, entry.size, entry.is_dir, escape_csv(ext))
-            .map_err(|e| format!("Write error: {}", e))?;
+        writeln!(
+            w,
+            "{},{},{},{}",
+            path_str,
+            entry.size,
+            entry.is_dir,
+            escape_csv(ext)
+        )
+        .map_err(|e| format!("Write error: {}", e))?;
     }
 
     w.flush().map_err(|e| format!("Flush error: {}", e))?;

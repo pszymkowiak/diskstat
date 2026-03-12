@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 
 /// Global debug database at ~/.cache/diskstat/diskstat.db
 ///

@@ -1,10 +1,10 @@
 use bytesize::ByteSize;
-use ratatui::Frame;
+use ratatui::layout::Constraint;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Row, Table};
-use ratatui::layout::Constraint;
+use ratatui::Frame;
 
 use crate::app::App;
 use crate::ui::style::UiStyle;
@@ -69,9 +69,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
         Constraint::Min(20),
     ];
 
-    let table = Table::new(rows, widths)
-        .header(header)
-        .block(block);
+    let table = Table::new(rows, widths).header(header).block(block);
 
     f.render_widget(table, area);
 }
@@ -111,7 +109,8 @@ pub fn draw_summary(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
                 Style::default().fg(stat.color),
             ));
             spans.push(Span::styled(
-                format!("{:<8} {:>8} {:>5.1}%  ",
+                format!(
+                    "{:<8} {:>8} {:>5.1}%  ",
                     format!(".{}", stat.extension),
                     format!("{}", ByteSize(stat.total_size)),
                     pct
