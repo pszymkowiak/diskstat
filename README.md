@@ -27,6 +27,7 @@ diskstat combines the best features of existing disk usage analyzers with modern
 - **Instant restart** via binary tree cache (< 100ms for cached scans)
 - **Interactive treemap** with color-coded file extensions
 - **File tree** with size bars, percentages, expand/collapse
+- **Size filtering** (show only files/directories ≥ threshold, e.g., `F` then `10M` for ≥10MB)
 - **Duplicate detection** (3-pass: size > partial hash > full hash with blake3)
 - **Extension statistics** tab
 - **Keyboard + mouse** navigation
@@ -136,6 +137,8 @@ CLI arguments override config file settings.
 | `o` | Open in Finder/file manager |
 | `c` | Copy path to clipboard |
 | `e` | Export to CSV |
+| `F` | Filter by size (e.g., 10M, 1.5G) |
+| `C` | Clear size filter |
 | `d` | Find duplicates |
 | `D` | Delete selected (with confirmation) |
 | `t` | Cycle theme |
@@ -163,6 +166,7 @@ CLI arguments override config file settings.
 - **Redemarrage instantane** via cache binaire (< 100ms pour les scans en cache)
 - **Treemap interactif** avec couleurs par extension de fichier
 - **Arbre de fichiers** avec barres de taille, pourcentages, deplier/replier
+- **Filtrage par taille** (afficher seulement fichiers/dossiers ≥ seuil, ex: `F` puis `10M` pour ≥10MB)
 - **Detection de doublons** (3 passes : taille > hash partiel > hash complet avec blake3)
 - **Onglet statistiques** par extension
 - **Navigation clavier + souris**
@@ -224,6 +228,8 @@ diskstat --info           # Afficher les infos de version
 | `o` | Ouvrir dans le Finder/gestionnaire de fichiers |
 | `c` | Copier le chemin dans le presse-papiers |
 | `e` | Exporter en CSV |
+| `F` | Filtrer par taille (ex: 10M, 1.5G) |
+| `C` | Effacer le filtre de taille |
 | `d` | Chercher les doublons |
 | `D` | Supprimer (avec confirmation) |
 | `t` | Changer de theme |

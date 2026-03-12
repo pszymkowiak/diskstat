@@ -89,6 +89,17 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
         ));
     }
 
+    // Size filter indicator
+    if let Some(min_size) = app.min_size_filter {
+        spans.push(Span::styled(" | ", Style::default().fg(Color::DarkGray)));
+        spans.push(Span::styled(
+            format!("Filter: ≥{}", ByteSize(min_size)),
+            Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+
     // Sort mode indicator (only show in TreeMap tab)
     if app.active_tab == ActiveTab::TreeMap {
         spans.push(Span::styled(" | ", Style::default().fg(Color::DarkGray)));

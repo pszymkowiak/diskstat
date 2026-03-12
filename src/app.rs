@@ -147,6 +147,10 @@ pub struct App {
     // Sort mode
     pub sort_mode: SortMode,
 
+    // Size filter (None = no filter, Some(bytes) = show only >= bytes)
+    pub min_size_filter: Option<u64>,
+    pub filter_input: Option<String>,
+
     // Split & treemap visibility
     pub split_pct: u16,       // 0-100, percentage of left panel (default: 40)
     pub show_treemap: bool,   // true = treemap visible, false = tree takes 100%
@@ -240,6 +244,8 @@ impl App {
             menu_state: MenuState::new(),
             current_style_index: 0,
             sort_mode: SortMode::SizeDesc,
+            min_size_filter: None,
+            filter_input: None,
             split_pct: 40,
             show_treemap: true,
             dragging_split: false,
@@ -323,6 +329,7 @@ impl App {
             let root = tree.root;
             let expanded = &self.tree_state.expanded;
             let sort_mode = self.sort_mode;
+            let min_size_filter = self.min_size_filter;
             let mut guide = Vec::new();
             collect_visible_into(
                 tree,
@@ -331,6 +338,7 @@ impl App {
                 &mut guide,
                 expanded,
                 sort_mode,
+                min_size_filter,
                 &mut self.tree_state.visible_nodes,
             );
         }
@@ -722,6 +730,7 @@ impl PathInput {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_visible_into(
     tree: &FileTree,
     node_id: NodeId,
@@ -729,8 +738,17 @@ fn collect_visible_into(
     guide: &mut Vec<bool>,
     expanded: &std::collections::HashSet<NodeId>,
     sort_mode: SortMode,
+    min_size_filter: Option<u64>,
     result: &mut Vec<(NodeId, u16, Vec<bool>)>,
 ) {
+    // Apply size filter (skip nodes smaller than threshold)
+    let node_size = tree.arena[node_id].get().size;
+    if let Some(min_size) = min_size_filter {
+        if node_size < min_size {
+            return;
+        }
+    }
+
     // Clone guide for storage in result, but reuse the same Vec for recursion
     result.push((node_id, depth, guide.clone()));
     if expanded.contains(&node_id) {
@@ -739,7 +757,16 @@ fn collect_visible_into(
         for (i, child) in children.into_iter().enumerate() {
             let is_last = i == count - 1;
             guide.push(is_last);
-            collect_visible_into(tree, child, depth + 1, guide, expanded, sort_mode, result);
+            collect_visible_into(
+                tree,
+                child,
+                depth + 1,
+                guide,
+                expanded,
+                sort_mode,
+                min_size_filter,
+                result,
+            );
             guide.pop();
         }
     }

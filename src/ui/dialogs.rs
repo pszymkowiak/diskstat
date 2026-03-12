@@ -94,6 +94,14 @@ pub fn draw_help(f: &mut Frame, app: &App, style: &UiStyle) {
             Span::raw("Export CSV"),
         ]),
         Line::from(vec![
+            Span::styled("  F           ", Style::default().fg(style.fg_accent)),
+            Span::raw("Filter by size (e.g., 10M, 1.5G)"),
+        ]),
+        Line::from(vec![
+            Span::styled("  C           ", Style::default().fg(style.fg_accent)),
+            Span::raw("Clear size filter"),
+        ]),
+        Line::from(vec![
             Span::styled("  ?           ", Style::default().fg(style.fg_accent)),
             Span::raw("Toggle this help"),
         ]),
@@ -353,6 +361,37 @@ pub fn draw_search_input(f: &mut Frame, app: &App) {
             Span::styled(
                 cursor_char,
                 Style::default().fg(Color::Black).bg(Color::White),
+            ),
+        ]);
+
+        let bar = Paragraph::new(line).style(Style::default().bg(Color::Rgb(20, 20, 20)));
+        f.render_widget(bar, bar_area);
+    }
+}
+
+pub fn draw_filter_input(f: &mut Frame, app: &App) {
+    if let Some(input) = &app.filter_input {
+        let area = f.area();
+        let y = area.height.saturating_sub(1);
+        let bar_area = Rect::new(area.x, y, area.width, 1);
+
+        let cursor_char = if input.is_empty() { " " } else { "" };
+        let prompt = format!("{}: ", app.strings.min_size);
+        let line = Line::from(vec![
+            Span::styled(
+                &prompt,
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(input.as_str(), Style::default().fg(Color::White)),
+            Span::styled(
+                cursor_char,
+                Style::default().fg(Color::Black).bg(Color::White),
+            ),
+            Span::styled(
+                " (e.g., 10M, 1.5G, 500K, Enter=apply, Esc=cancel)",
+                Style::default().fg(Color::DarkGray),
             ),
         ]);
 

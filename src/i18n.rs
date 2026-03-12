@@ -82,6 +82,10 @@ pub struct Strings {
     pub sort_age_newest: &'static str,
     pub sort_age_oldest: &'static str,
     pub scanning_progress: &'static str, // "Scanning: {files} files ({size})"
+    pub filter_size: &'static str,
+    pub filter_active: &'static str,
+    pub filter_cleared: &'static str,
+    pub min_size: &'static str,
 }
 
 /// Get strings for a specific language.
@@ -151,6 +155,10 @@ static EN: Strings = Strings {
     sort_age_newest: "Age Newest",
     sort_age_oldest: "Age Oldest",
     scanning_progress: "Scanning",
+    filter_size: "Filter by size",
+    filter_active: "Filter active: min {}",
+    filter_cleared: "Filter cleared",
+    min_size: "Min size",
 };
 
 static FR: Strings = Strings {
@@ -212,4 +220,8 @@ static FR: Strings = Strings {
     sort_age_newest: "Plus récent",
     sort_age_oldest: "Plus ancien",
     scanning_progress: "Analyse",
+    filter_size: "Filtrer par taille",
+    filter_active: "Filtre actif: min {}",
+    filter_cleared: "Filtre désactivé",
+    min_size: "Taille min",
 };

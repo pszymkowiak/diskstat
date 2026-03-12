@@ -375,6 +375,11 @@ fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputA
         return handle_search_input(app, code, modifiers);
     }
 
+    // Filter input dialog
+    if app.filter_input.is_some() {
+        return handle_filter_input(app, code, modifiers);
+    }
+
     // Path input dialog
     if app.path_input.is_some() {
         return handle_path_input(app, code, modifiers);
@@ -581,6 +586,20 @@ fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputA
                         return InputAction::SubtreeRescan(selected, subtree_path);
                     }
                 }
+            }
+        }
+
+        // Filter by size
+        KeyCode::Char('F') => {
+            app.filter_input = Some(String::new());
+        }
+
+        // Clear filter
+        KeyCode::Char('C') => {
+            if app.min_size_filter.is_some() {
+                app.min_size_filter = None;
+                app.rebuild_visible_nodes();
+                app.status_message = Some(app.strings.filter_cleared.to_string());
             }
         }
 
@@ -823,6 +842,90 @@ fn handle_search_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) ->
     }
 
     InputAction::Continue
+}
+
+fn handle_filter_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputAction {
+    // Ctrl+C cancels
+    if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('c') {
+        app.filter_input = None;
+        return InputAction::Continue;
+    }
+
+    match code {
+        KeyCode::Esc => {
+            app.filter_input = None;
+        }
+        KeyCode::Enter => {
+            if let Some(input) = app.filter_input.take() {
+                if !input.is_empty() {
+                    // Parse size with units (e.g., "10M", "1.5G", "500K")
+                    if let Some(bytes) = parse_size(&input) {
+                        app.min_size_filter = Some(bytes);
+                        app.rebuild_visible_nodes();
+                        let formatted = bytesize::ByteSize(bytes).to_string();
+                        app.status_message = Some(format!(
+                            "{}: {}",
+                            app.strings.filter_active.replace("{}", &formatted),
+                            formatted
+                        ));
+                    } else {
+                        app.status_message =
+                            Some("Invalid size format (use 10M, 1.5G, 500K)".to_string());
+                    }
+                } else {
+                    // Empty input = clear filter
+                    app.min_size_filter = None;
+                    app.rebuild_visible_nodes();
+                    app.status_message = Some(app.strings.filter_cleared.to_string());
+                }
+            }
+        }
+        KeyCode::Backspace => {
+            if let Some(input) = app.filter_input.as_mut() {
+                input.pop();
+            }
+        }
+        KeyCode::Char(c) => {
+            if let Some(input) = app.filter_input.as_mut() {
+                input.push(c);
+            }
+        }
+        _ => {}
+    }
+
+    InputAction::Continue
+}
+
+/// Parse size string like "10M", "1.5G", "500K" into bytes
+fn parse_size(s: &str) -> Option<u64> {
+    let s = s.trim().to_uppercase();
+    if s.is_empty() {
+        return None;
+    }
+
+    // Find the boundary between number and unit
+    let mut num_end = 0;
+    for (i, c) in s.chars().enumerate() {
+        if c.is_ascii_digit() || c == '.' {
+            num_end = i + 1;
+        } else {
+            break;
+        }
+    }
+
+    let (num_str, unit) = s.split_at(num_end);
+    let num: f64 = num_str.parse().ok()?;
+
+    let multiplier: u64 = match unit.trim() {
+        "" | "B" => 1,
+        "K" | "KB" => 1024,
+        "M" | "MB" => 1024 * 1024,
+        "G" | "GB" => 1024 * 1024 * 1024,
+        "T" | "TB" => 1024_u64 * 1024 * 1024 * 1024,
+        _ => return None,
+    };
+
+    Some((num * multiplier as f64) as u64)
 }
 
 enum InputAction {
