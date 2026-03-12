@@ -415,7 +415,7 @@ impl App {
     /// Perform search: find all nodes whose name contains the query (case-insensitive).
     pub fn search_execute(&mut self) {
         let query = match &self.search_query {
-            Some(q) if !q.is_empty() => q.to_lowercase(),
+            Some(q) if !q.is_empty() => q,
             _ => return,
         };
         self.search_matches.clear();
@@ -423,7 +423,7 @@ impl App {
         if let Some(tree) = &self.tree {
             for nid in tree.root.descendants(&tree.arena) {
                 let name = &tree.arena[nid].get().name;
-                if name.to_lowercase().contains(&query) {
+                if contains_ignore_case_ascii(name, query) {
                     self.search_matches.push(nid);
                 }
             }
@@ -681,4 +681,32 @@ fn get_disk_space(path: &std::path::Path) -> Option<(u64, u64)> {
             None
         }
     }
+}
+
+/// Fast case-insensitive ASCII string search (avoids allocation).
+/// Falls back to full Unicode lowercase only if needle contains non-ASCII.
+/// Note: Can't use eq_ignore_ascii_case because we need substring search, not full match.
+#[allow(clippy::all)]
+fn contains_ignore_case_ascii(haystack: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    if haystack.len() < needle.len() {
+        return false;
+    }
+
+    // Fast path: ASCII-only search (most common case)
+    if needle.is_ascii() && haystack.is_ascii() {
+        let needle_bytes = needle.as_bytes();
+        let haystack_bytes = haystack.as_bytes();
+        return haystack_bytes.windows(needle_bytes.len()).any(|window| {
+            window
+                .iter()
+                .zip(needle_bytes)
+                .all(|(h, n)| h.to_ascii_lowercase() == n.to_ascii_lowercase())
+        });
+    }
+
+    // Slow path: Unicode (rare, but needed for correctness)
+    haystack.to_lowercase().contains(&needle.to_lowercase())
 }

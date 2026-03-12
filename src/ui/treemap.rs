@@ -154,10 +154,18 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, ui_style: &UiStyle) -> Vec<Tre
 
     // Pass 2: draw labels on large enough rectangles
     let buf = f.buffer_mut();
+    let mut size_buf = String::with_capacity(16); // Reusable buffer for format_size
     for item in &layout {
         let child_node = children[item.index];
         let entry = tree.arena[child_node].get();
-        draw_label(buf, inner, item.rect, &entry.name, entry.size);
+        draw_label(
+            buf,
+            inner,
+            item.rect,
+            &entry.name,
+            entry.size,
+            &mut size_buf,
+        );
     }
 
     // Pass 3: selection border
@@ -298,7 +306,14 @@ fn dominant_color(tree: &FileTree, node_id: NodeId, color_map: &HashMap<String, 
 }
 
 /// Draw a label on a rectangle if it's large enough.
-fn draw_label(buf: &mut Buffer, inner: Rect, r: TreemapRect, name: &str, size: u64) {
+fn draw_label(
+    buf: &mut Buffer,
+    inner: Rect,
+    r: TreemapRect,
+    name: &str,
+    size: u64,
+    size_buf: &mut String,
+) {
     let rw = r.w as u16;
     let rh = r.h as u16;
 
@@ -337,11 +352,11 @@ fn draw_label(buf: &mut Buffer, inner: Rect, r: TreemapRect, name: &str, size: u
 
     // Size label on second line
     if rh >= 2 && rw >= 5 {
-        let size_str = format_size(size);
-        let size_label: &str = if size_str.len() > max_len {
-            &size_str[..max_len]
+        format_size_into(size, size_buf);
+        let size_label: &str = if size_buf.len() > max_len {
+            &size_buf[..max_len]
         } else {
-            &size_str
+            size_buf
         };
         let y2 = y + 1;
         if y2 < inner.y + inner.height {
@@ -434,17 +449,26 @@ fn draw_selection_border(buf: &mut Buffer, area: Rect, rect: TreemapRect, ui_sty
     }
 }
 
-pub fn format_size(bytes: u64) -> String {
+/// Format size into a reusable buffer (optimized to avoid allocation).
+fn format_size_into(bytes: u64, buf: &mut String) {
+    use std::fmt::Write;
+    buf.clear();
     const KB: u64 = 1024;
     const MB: u64 = 1024 * KB;
     const GB: u64 = 1024 * MB;
     if bytes >= GB {
-        format!("{:.1}G", bytes as f64 / GB as f64)
+        let _ = write!(buf, "{:.1}G", bytes as f64 / GB as f64);
     } else if bytes >= MB {
-        format!("{:.1}M", bytes as f64 / MB as f64)
+        let _ = write!(buf, "{:.1}M", bytes as f64 / MB as f64);
     } else if bytes >= KB {
-        format!("{}K", bytes / KB)
+        let _ = write!(buf, "{}K", bytes / KB);
     } else {
-        format!("{}B", bytes)
+        let _ = write!(buf, "{}B", bytes);
     }
+}
+
+pub fn format_size(bytes: u64) -> String {
+    let mut buf = String::with_capacity(16);
+    format_size_into(bytes, &mut buf);
+    buf
 }

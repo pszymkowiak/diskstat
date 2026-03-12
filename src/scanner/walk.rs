@@ -38,6 +38,10 @@ struct ScanContext {
     pending: Mutex<Vec<PendingWrite>>,
     /// Extension string intern table (reduces memory for extensions).
     extension_intern: Mutex<HashMap<String, Arc<str>>>,
+    /// Node count for OOM protection (separate from file_count).
+    node_count: AtomicU64,
+    /// Maximum nodes allowed (default 10M).
+    max_nodes: u64,
 }
 
 pub fn scan_directory(
@@ -69,6 +73,8 @@ pub fn scan_directory(
             cache,
             pending: Mutex::new(Vec::new()),
             extension_intern: Mutex::new(HashMap::new()),
+            node_count: AtomicU64::new(0),
+            max_nodes: 10_000_000, // 10M nodes limit for OOM protection
         });
 
         // Progress reporter
@@ -130,6 +136,15 @@ pub fn scan_directory(
 }
 
 fn scan_dir_recursive(ctx: &ScanContext, dir_path: &Path, parent_id: NodeId, depth: u16) {
+    // OOM protection: check node count before continuing
+    if ctx.node_count.load(Ordering::Relaxed) >= ctx.max_nodes {
+        eprintln!(
+            "Warning: Reached maximum node limit ({}), stopping scan",
+            ctx.max_nodes
+        );
+        return;
+    }
+
     // Try cache (lock-free read from in-memory HashMap)
     let children = if let Some(cache) = &ctx.cache {
         if let Some(cached) = cache.lookup_dir(dir_path) {
@@ -164,6 +179,9 @@ fn scan_dir_recursive(ctx: &ScanContext, dir_path: &Path, parent_id: NodeId, dep
                 depth,
             });
             parent_id.append(node_id, &mut arena);
+
+            // Increment node count for OOM tracking
+            ctx.node_count.fetch_add(1, Ordering::Relaxed);
 
             if child.is_dir {
                 subdirs.push((dir_path.join(&child.name), node_id));
@@ -241,6 +259,10 @@ fn read_dir_fallback(path: &Path) -> Result<Vec<DirChild>, std::io::Error> {
             Ok(ft) => ft,
             Err(_) => continue,
         };
+        // Skip symlinks for security (prevent cycles and escapes)
+        if ft.is_symlink() {
+            continue;
+        }
         let is_dir = ft.is_dir();
         let size = if is_dir {
             0
@@ -279,6 +301,7 @@ fn read_dir_bulk_macos(path: &Path) -> Result<Vec<DirChild>, std::io::Error> {
     const ATTR_CMN_OBJTYPE: u32 = 0x00000008;
     const ATTR_FILE_ALLOCSIZE: u32 = 0x00000004;
     const VDIR: u32 = 2;
+    const VLNK: u32 = 5; // Symlink type
 
     #[repr(C)]
     struct AttrList {
@@ -408,6 +431,12 @@ fn read_dir_bulk_macos(path: &Path) -> Result<Vec<DirChild>, std::io::Error> {
             };
 
             if name == "." || name == ".." {
+                offset = record_end;
+                continue;
+            }
+
+            // Skip symlinks for security (prevent cycles and escapes)
+            if obj_type == VLNK {
                 offset = record_end;
                 continue;
             }
