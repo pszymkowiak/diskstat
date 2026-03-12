@@ -85,4 +85,81 @@ mod tests {
         assert_eq!(truncate_str("你好世界", 2), "你好");
         assert_eq!(truncate_str("🔥fire", 2), "🔥f");
     }
+
+    #[test]
+    fn test_format_age_zero() {
+        assert_eq!(format_age(0), "");
+    }
+
+    #[test]
+    fn test_format_age_future() {
+        let future = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+            + 1000;
+        assert_eq!(format_age(future), "");
+    }
+
+    #[test]
+    fn test_format_age_less_than_day() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let recent = now - 3600; // 1 hour ago
+        assert_eq!(format_age(recent), "<1d");
+    }
+
+    #[test]
+    fn test_format_age_days() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let days_ago = now - (5 * 86400); // 5 days ago
+        assert_eq!(format_age(days_ago), "5d");
+    }
+
+    #[test]
+    fn test_format_age_weeks() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let weeks_ago = now - (21 * 86400); // 21 days ago
+        assert_eq!(format_age(weeks_ago), "3w");
+    }
+
+    #[test]
+    fn test_format_age_months() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let months_ago = now - (90 * 86400); // 90 days ago
+        assert_eq!(format_age(months_ago), "3m");
+    }
+
+    #[test]
+    fn test_format_age_years() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let years_ago = now - (730 * 86400); // 730 days ago
+        assert_eq!(format_age(years_ago), "2y");
+    }
+
+    #[test]
+    fn test_truncate_str_empty() {
+        assert_eq!(truncate_str("", 0), "");
+        assert_eq!(truncate_str("", 10), "");
+    }
+
+    #[test]
+    fn test_truncate_str_exact_length() {
+        assert_eq!(truncate_str("hello", 5), "hello");
+        assert_eq!(truncate_str("test", 4), "test");
+    }
 }

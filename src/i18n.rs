@@ -75,6 +75,12 @@ pub struct Strings {
     pub confirm: &'static str,
     pub cancel: &'static str,
     pub top_files: &'static str,
+    pub sort_size_desc: &'static str,
+    pub sort_size_asc: &'static str,
+    pub sort_name_asc: &'static str,
+    pub sort_name_desc: &'static str,
+    pub sort_age_newest: &'static str,
+    pub sort_age_oldest: &'static str,
 }
 
 /// Get strings for a specific language.
@@ -137,6 +143,12 @@ static EN: Strings = Strings {
     confirm: "Confirm",
     cancel: "Cancel",
     top_files: "Top Largest Files",
+    sort_size_desc: "Size ↓",
+    sort_size_asc: "Size ↑",
+    sort_name_asc: "Name A→Z",
+    sort_name_desc: "Name Z→A",
+    sort_age_newest: "Age Newest",
+    sort_age_oldest: "Age Oldest",
 };
 
 static FR: Strings = Strings {
@@ -191,4 +203,10 @@ static FR: Strings = Strings {
     confirm: "Confirmer",
     cancel: "Annuler",
     top_files: "Plus gros fichiers",
+    sort_size_desc: "Taille ↓",
+    sort_size_asc: "Taille ↑",
+    sort_name_asc: "Nom A→Z",
+    sort_name_desc: "Nom Z→A",
+    sort_age_newest: "Plus récent",
+    sort_age_oldest: "Plus ancien",
 };

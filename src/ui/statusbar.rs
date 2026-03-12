@@ -5,7 +5,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
-use crate::app::{App, ScanState};
+use crate::app::{ActiveTab, App, ScanState};
 use crate::ui::style::UiStyle;
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
@@ -70,6 +70,15 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
                 app.strings.used
             ),
             Style::default().fg(Color::Rgb(140, 140, 140)),
+        ));
+    }
+
+    // Sort mode indicator (only show in TreeMap tab)
+    if app.active_tab == ActiveTab::TreeMap {
+        spans.push(Span::styled(" | ", Style::default().fg(Color::DarkGray)));
+        spans.push(Span::styled(
+            format!("Sort: {}", app.sort_mode.display_name()),
+            Style::default().fg(Color::Cyan),
         ));
     }
 

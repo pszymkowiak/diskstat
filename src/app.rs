@@ -31,6 +31,40 @@ pub enum ActivePane {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortMode {
+    SizeDesc,
+    SizeAsc,
+    NameAsc,
+    NameDesc,
+    AgeNewest,
+    AgeOldest,
+}
+
+impl SortMode {
+    pub fn next(self) -> Self {
+        match self {
+            SortMode::SizeDesc => SortMode::SizeAsc,
+            SortMode::SizeAsc => SortMode::NameAsc,
+            SortMode::NameAsc => SortMode::NameDesc,
+            SortMode::NameDesc => SortMode::AgeNewest,
+            SortMode::AgeNewest => SortMode::AgeOldest,
+            SortMode::AgeOldest => SortMode::SizeDesc,
+        }
+    }
+
+    pub fn display_name(self) -> &'static str {
+        match self {
+            SortMode::SizeDesc => "Size ↓",
+            SortMode::SizeAsc => "Size ↑",
+            SortMode::NameAsc => "Name A→Z",
+            SortMode::NameDesc => "Name Z→A",
+            SortMode::AgeNewest => "Age Newest",
+            SortMode::AgeOldest => "Age Oldest",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScanState {
     Idle,
     Scanning,
@@ -109,6 +143,9 @@ pub struct App {
     // Menu bar
     pub menu_state: MenuState,
     pub current_style_index: usize,
+
+    // Sort mode
+    pub sort_mode: SortMode,
 
     // Split & treemap visibility
     pub split_pct: u16,       // 0-100, percentage of left panel (default: 40)
@@ -202,6 +239,7 @@ impl App {
             top_files_count: 50,
             menu_state: MenuState::new(),
             current_style_index: 0,
+            sort_mode: SortMode::SizeDesc,
             split_pct: 40,
             show_treemap: true,
             dragging_split: false,
@@ -284,6 +322,7 @@ impl App {
         if let Some(tree) = &self.tree {
             let root = tree.root;
             let expanded = &self.tree_state.expanded;
+            let sort_mode = self.sort_mode;
             let mut guide = Vec::new();
             collect_visible_into(
                 tree,
@@ -291,6 +330,7 @@ impl App {
                 0,
                 &mut guide,
                 expanded,
+                sort_mode,
                 &mut self.tree_state.visible_nodes,
             );
         }
@@ -688,17 +728,18 @@ fn collect_visible_into(
     depth: u16,
     guide: &mut Vec<bool>,
     expanded: &std::collections::HashSet<NodeId>,
+    sort_mode: SortMode,
     result: &mut Vec<(NodeId, u16, Vec<bool>)>,
 ) {
     // Clone guide for storage in result, but reuse the same Vec for recursion
     result.push((node_id, depth, guide.clone()));
     if expanded.contains(&node_id) {
-        let children = tree.sorted_children(node_id);
+        let children = tree.sorted_children_with_mode(node_id, sort_mode);
         let count = children.len();
         for (i, child) in children.into_iter().enumerate() {
             let is_last = i == count - 1;
             guide.push(is_last);
-            collect_visible_into(tree, child, depth + 1, guide, expanded, result);
+            collect_visible_into(tree, child, depth + 1, guide, expanded, sort_mode, result);
             guide.pop();
         }
     }
@@ -765,5 +806,33 @@ mod tests {
         assert!(!contains_ignore_case_ascii("hi", "hello"));
         assert!(contains_ignore_case_ascii("test", ""));
         assert!(contains_ignore_case_ascii("MixedCASE", "mixed"));
+    }
+
+    #[test]
+    fn test_contains_ignore_case_unicode() {
+        // Unicode slow path
+        assert!(contains_ignore_case_ascii("Café", "café"));
+        assert!(contains_ignore_case_ascii("Hello世界", "世界"));
+        assert!(!contains_ignore_case_ascii("test", "世界"));
+    }
+
+    #[test]
+    fn test_sort_mode_next() {
+        assert_eq!(SortMode::SizeDesc.next(), SortMode::SizeAsc);
+        assert_eq!(SortMode::SizeAsc.next(), SortMode::NameAsc);
+        assert_eq!(SortMode::NameAsc.next(), SortMode::NameDesc);
+        assert_eq!(SortMode::NameDesc.next(), SortMode::AgeNewest);
+        assert_eq!(SortMode::AgeNewest.next(), SortMode::AgeOldest);
+        assert_eq!(SortMode::AgeOldest.next(), SortMode::SizeDesc);
+    }
+
+    #[test]
+    fn test_sort_mode_display() {
+        assert_eq!(SortMode::SizeDesc.display_name(), "Size ↓");
+        assert_eq!(SortMode::SizeAsc.display_name(), "Size ↑");
+        assert_eq!(SortMode::NameAsc.display_name(), "Name A→Z");
+        assert_eq!(SortMode::NameDesc.display_name(), "Name Z→A");
+        assert_eq!(SortMode::AgeNewest.display_name(), "Age Newest");
+        assert_eq!(SortMode::AgeOldest.display_name(), "Age Oldest");
     }
 }

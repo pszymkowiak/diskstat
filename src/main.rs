@@ -485,8 +485,8 @@ fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputA
             }
         }
         KeyCode::Char('s') => {
-            // Scan for duplicates
             if app.active_tab == ActiveTab::Duplicates && !app.dupes_scanning {
+                // Scan for duplicates
                 if let Some(tree) = &app.tree {
                     app.dupes_scanning = true;
                     app.status_message = Some("Scanning for duplicates...".to_string());
@@ -496,6 +496,11 @@ fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputA
                     app.status_message =
                         Some(format!("Found {} duplicate groups", app.duplicates.len()));
                 }
+            } else if app.active_tab == ActiveTab::TreeMap {
+                // Cycle sort mode
+                app.sort_mode = app.sort_mode.next();
+                app.rebuild_visible_nodes();
+                app.status_message = Some(format!("Sort: {}", app.sort_mode.display_name()));
             }
         }
 

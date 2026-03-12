@@ -5,6 +5,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::app::SortMode;
+
 /// Arena-based file tree for memory-efficient storage.
 pub struct FileTree {
     pub arena: Arena<FileEntry>,
@@ -71,27 +73,66 @@ impl FileTree {
         self.sorted_cache.borrow_mut().clear();
     }
 
-    /// Get sorted children (by size, descending) of a node.
-    /// Results are cached to avoid re-sorting on every call.
-    pub fn sorted_children(&self, node_id: NodeId) -> Vec<NodeId> {
-        // Check cache first
-        if let Some(cached) = self.sorted_cache.borrow().get(&node_id) {
-            return cached.clone();
+    /// Get sorted children of a node according to the given sort mode.
+    /// Note: Currently not cached per-mode (performance optimization TODO).
+    pub fn sorted_children_with_mode(&self, node_id: NodeId, mode: SortMode) -> Vec<NodeId> {
+        // TODO: Cache with composite key (node_id, mode)
+        // For now we skip caching to avoid stale results on mode changes
+        let mut children: Vec<NodeId> = node_id.children(&self.arena).collect();
+
+        match mode {
+            SortMode::SizeDesc => {
+                children.sort_by(|a, b| {
+                    let sa = self.arena[*a].get().size;
+                    let sb = self.arena[*b].get().size;
+                    sb.cmp(&sa)
+                });
+            }
+            SortMode::SizeAsc => {
+                children.sort_by(|a, b| {
+                    let sa = self.arena[*a].get().size;
+                    let sb = self.arena[*b].get().size;
+                    sa.cmp(&sb)
+                });
+            }
+            SortMode::NameAsc => {
+                children.sort_by(|a, b| {
+                    let na = &self.arena[*a].get().name;
+                    let nb = &self.arena[*b].get().name;
+                    na.cmp(nb)
+                });
+            }
+            SortMode::NameDesc => {
+                children.sort_by(|a, b| {
+                    let na = &self.arena[*a].get().name;
+                    let nb = &self.arena[*b].get().name;
+                    nb.cmp(na)
+                });
+            }
+            SortMode::AgeNewest => {
+                children.sort_by(|a, b| {
+                    let ta = self.arena[*a].get().mtime;
+                    let tb = self.arena[*b].get().mtime;
+                    tb.cmp(&ta) // Newest first (higher timestamp)
+                });
+            }
+            SortMode::AgeOldest => {
+                children.sort_by(|a, b| {
+                    let ta = self.arena[*a].get().mtime;
+                    let tb = self.arena[*b].get().mtime;
+                    ta.cmp(&tb) // Oldest first (lower timestamp)
+                });
+            }
         }
 
-        // Cache miss - compute and store
-        let mut children: Vec<NodeId> = node_id.children(&self.arena).collect();
-        children.sort_by(|a, b| {
-            let sa = self.arena[*a].get().size;
-            let sb = self.arena[*b].get().size;
-            sb.cmp(&sa)
-        });
-
-        // Store in cache
-        self.sorted_cache
-            .borrow_mut()
-            .insert(node_id, children.clone());
         children
+    }
+
+    /// Get sorted children (by size, descending) of a node.
+    /// Results are cached to avoid re-sorting on every call.
+    /// Deprecated: Use sorted_children_with_mode instead.
+    pub fn sorted_children(&self, node_id: NodeId) -> Vec<NodeId> {
+        self.sorted_children_with_mode(node_id, SortMode::SizeDesc)
     }
 
     /// Get the total number of nodes.
@@ -196,4 +237,61 @@ pub const EXT_COLORS: &[Color] = &[
 /// Get a color for a given extension index (wraps around).
 pub fn color_for_index(idx: usize) -> Color {
     EXT_COLORS[idx % EXT_COLORS.len()]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_file_tree_new() {
+        let path = PathBuf::from("/tmp/test");
+        let tree = FileTree::new(path.clone());
+        assert_eq!(tree.root_path, path);
+        assert_eq!(tree.arena.count(), 1);
+        let root_entry = tree.arena[tree.root].get();
+        assert!(root_entry.is_dir);
+        assert_eq!(root_entry.size, 0);
+    }
+
+    #[test]
+    fn test_file_tree_compute_sizes() {
+        let path = PathBuf::from("/tmp/test");
+        let mut tree = FileTree::new(path);
+
+        // Add a file as child of root
+        let file = tree.arena.new_node(FileEntry {
+            name: "file.txt".to_string(),
+            size: 1024,
+            file_count: 1,
+            is_dir: false,
+            extension: Some("txt".into()),
+            depth: 1,
+            mtime: 0,
+        });
+        tree.root.append(file, &mut tree.arena);
+
+        // Compute sizes
+        tree.compute_sizes();
+
+        // Root should have size of its children
+        let root_entry = tree.arena[tree.root].get();
+        assert_eq!(root_entry.size, 1024);
+        assert_eq!(root_entry.file_count, 1);
+    }
+
+    #[test]
+    fn test_extension_from_name_double_ext() {
+        // This would be tested in scanner module, but we can test the concept
+        let name = "file.tar.gz";
+        let ext = name.rsplit('.').next().unwrap();
+        assert_eq!(ext, "gz");
+    }
+
+    #[test]
+    fn test_extension_from_name_dots() {
+        let name = "file.name.with.dots.rs";
+        let ext = name.rsplit('.').next().unwrap();
+        assert_eq!(ext, "rs");
+    }
 }

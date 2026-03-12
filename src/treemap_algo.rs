@@ -245,4 +245,27 @@ mod tests {
         let layout = squarify(rect, &sizes);
         assert!(layout.is_empty());
     }
+
+    #[test]
+    fn test_squarify_proportional_areas() {
+        let rect = TreemapRect {
+            x: 0.0,
+            y: 0.0,
+            w: 100.0,
+            h: 100.0,
+        };
+        let sizes = vec![(0, 50.0), (1, 30.0), (2, 20.0)];
+        let layout = squarify(rect, &sizes);
+
+        // Areas should be proportional to sizes
+        let total_size: f64 = sizes.iter().map(|(_, s)| s).sum();
+        let total_area = rect.w * rect.h;
+
+        for (i, item) in layout.iter().enumerate() {
+            let item_area = item.rect.w * item.rect.h;
+            let expected_area = (sizes[i].1 / total_size) * total_area;
+            let error = (item_area - expected_area).abs();
+            assert!(error < 1.0, "Item {} area error too large: {}", i, error);
+        }
+    }
 }
