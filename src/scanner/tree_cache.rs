@@ -141,6 +141,7 @@ pub fn load_tree(root_path: &Path) -> Option<FileTree> {
         arena,
         root: root_id?,
         root_path: root_path.to_path_buf(),
+        sorted_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
     })
 }
 

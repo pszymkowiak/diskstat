@@ -1,5 +1,7 @@
 use indextree::{Arena, NodeId};
 use ratatui::style::Color;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// Arena-based file tree for memory-efficient storage.
@@ -7,6 +9,8 @@ pub struct FileTree {
     pub arena: Arena<FileEntry>,
     pub root: NodeId,
     pub root_path: PathBuf,
+    /// Cache for sorted children to avoid re-sorting on every call
+    pub sorted_cache: RefCell<HashMap<NodeId, Vec<NodeId>>>,
 }
 
 impl FileTree {
@@ -30,6 +34,7 @@ impl FileTree {
             arena,
             root,
             root_path,
+            sorted_cache: RefCell::new(HashMap::new()),
         }
     }
 
@@ -53,16 +58,33 @@ impl FileTree {
                 node.file_count = child_count;
             }
         }
+        // Invalidate sorted_children cache after size computation
+        self.invalidate_sort_cache();
+    }
+
+    /// Invalidate the sorted children cache (call after tree mutations).
+    pub fn invalidate_sort_cache(&self) {
+        self.sorted_cache.borrow_mut().clear();
     }
 
     /// Get sorted children (by size, descending) of a node.
+    /// Results are cached to avoid re-sorting on every call.
     pub fn sorted_children(&self, node_id: NodeId) -> Vec<NodeId> {
+        // Check cache first
+        if let Some(cached) = self.sorted_cache.borrow().get(&node_id) {
+            return cached.clone();
+        }
+
+        // Cache miss - compute and store
         let mut children: Vec<NodeId> = node_id.children(&self.arena).collect();
         children.sort_by(|a, b| {
             let sa = self.arena[*a].get().size;
             let sb = self.arena[*b].get().size;
             sb.cmp(&sa)
         });
+
+        // Store in cache
+        self.sorted_cache.borrow_mut().insert(node_id, children.clone());
         children
     }
 

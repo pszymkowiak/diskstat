@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
@@ -8,6 +9,12 @@ use rayon::prelude::*;
 use crate::types::{DuplicateGroup, FileTree};
 
 const PARTIAL_HASH_SIZE: usize = 4096;
+const FULL_HASH_BUF_SIZE: usize = 65536;
+
+thread_local! {
+    static PARTIAL_BUF: RefCell<Vec<u8>> = RefCell::new(vec![0u8; PARTIAL_HASH_SIZE]);
+    static FULL_BUF: RefCell<Vec<u8>> = RefCell::new(vec![0u8; FULL_HASH_BUF_SIZE]);
+}
 
 /// Detect duplicate files using a 3-pass strategy:
 /// 1. Group by size
@@ -76,23 +83,26 @@ pub fn find_duplicates(tree: &FileTree) -> Vec<DuplicateGroup> {
 }
 
 fn partial_hash(path: &PathBuf) -> Option<String> {
-    let mut file = File::open(path).ok()?;
-    let mut buf = vec![0u8; PARTIAL_HASH_SIZE];
-    let n = file.read(&mut buf).ok()?;
-    buf.truncate(n);
-    Some(blake3::hash(&buf).to_hex().to_string())
+    PARTIAL_BUF.with(|buf_cell| {
+        let mut buf = buf_cell.borrow_mut();
+        let mut file = File::open(path).ok()?;
+        let n = file.read(&mut buf).ok()?;
+        Some(blake3::hash(&buf[..n]).to_hex().to_string())
+    })
 }
 
 fn full_hash(path: &PathBuf) -> Option<String> {
-    let mut file = File::open(path).ok()?;
-    let mut hasher = blake3::Hasher::new();
-    let mut buf = vec![0u8; 65536];
-    loop {
-        let n = file.read(&mut buf).ok()?;
-        if n == 0 {
-            break;
+    FULL_BUF.with(|buf_cell| {
+        let mut buf = buf_cell.borrow_mut();
+        let mut file = File::open(path).ok()?;
+        let mut hasher = blake3::Hasher::new();
+        loop {
+            let n = file.read(&mut buf).ok()?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
         }
-        hasher.update(&buf[..n]);
-    }
-    Some(hasher.finalize().to_hex().to_string())
+        Some(hasher.finalize().to_hex().to_string())
+    })
 }

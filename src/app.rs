@@ -259,8 +259,8 @@ impl App {
         if let Some(tree) = &self.tree {
             let root = tree.root;
             let expanded = &self.tree_state.expanded;
-            let guide = Vec::new();
-            collect_visible_into(tree, root, 0, &guide, expanded, &mut self.tree_state.visible_nodes);
+            let mut guide = Vec::new();
+            collect_visible_into(tree, root, 0, &mut guide, expanded, &mut self.tree_state.visible_nodes);
         }
     }
 
@@ -641,19 +641,20 @@ fn collect_visible_into(
     tree: &FileTree,
     node_id: NodeId,
     depth: u16,
-    guide: &Vec<bool>,
+    guide: &mut Vec<bool>,
     expanded: &std::collections::HashSet<NodeId>,
     result: &mut Vec<(NodeId, u16, Vec<bool>)>,
 ) {
+    // Clone guide for storage in result, but reuse the same Vec for recursion
     result.push((node_id, depth, guide.clone()));
     if expanded.contains(&node_id) {
         let children = tree.sorted_children(node_id);
         let count = children.len();
         for (i, child) in children.into_iter().enumerate() {
             let is_last = i == count - 1;
-            let mut child_guide = guide.clone();
-            child_guide.push(is_last);
-            collect_visible_into(tree, child, depth + 1, &child_guide, expanded, result);
+            guide.push(is_last);
+            collect_visible_into(tree, child, depth + 1, guide, expanded, result);
+            guide.pop();
         }
     }
 }

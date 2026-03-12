@@ -112,6 +112,7 @@ pub fn scan_directory(
             arena,
             root: root_id,
             root_path: root,
+            sorted_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
         };
 
         tree.compute_sizes();
