@@ -305,6 +305,14 @@ fn dominant_color(tree: &FileTree, node_id: NodeId, color_map: &HashMap<String, 
     best_color
 }
 
+/// Safely truncate a string to at most `max_chars` characters without panicking on multi-byte chars.
+fn truncate_str(s: &str, max_chars: usize) -> &str {
+    match s.char_indices().nth(max_chars) {
+        Some((idx, _)) => &s[..idx],
+        None => s,
+    }
+}
+
 /// Draw a label on a rectangle if it's large enough.
 fn draw_label(
     buf: &mut Buffer,
@@ -337,11 +345,7 @@ fn draw_label(
 
     // Name label
     let max_len = (rw as usize).saturating_sub(1);
-    let label: &str = if name.len() > max_len {
-        &name[..max_len]
-    } else {
-        name
-    };
+    let label = truncate_str(name, max_len);
 
     for (i, ch) in label.chars().enumerate() {
         let px = x + i as u16;
@@ -353,11 +357,7 @@ fn draw_label(
     // Size label on second line
     if rh >= 2 && rw >= 5 {
         format_size_into(size, size_buf);
-        let size_label: &str = if size_buf.len() > max_len {
-            &size_buf[..max_len]
-        } else {
-            size_buf
-        };
+        let size_label = truncate_str(size_buf, max_len);
         let y2 = y + 1;
         if y2 < inner.y + inner.height {
             for (i, ch) in size_label.chars().enumerate() {
@@ -471,4 +471,41 @@ pub fn format_size(bytes: u64) -> String {
     let mut buf = String::with_capacity(16);
     format_size_into(bytes, &mut buf);
     buf
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_size() {
+        assert_eq!(format_size(0), "0B");
+        assert_eq!(format_size(512), "512B");
+        assert_eq!(format_size(1024), "1K");
+        assert_eq!(format_size(1536), "1K");
+        assert_eq!(format_size(1048576), "1.0M");
+        assert_eq!(format_size(1073741824), "1.0G");
+    }
+
+    #[test]
+    fn test_label_fg() {
+        assert_eq!(label_fg(Color::Rgb(255, 255, 255)), Color::Black);
+        assert_eq!(label_fg(Color::Rgb(0, 0, 0)), Color::White);
+        assert_eq!(label_fg(Color::Red), Color::White);
+    }
+
+    #[test]
+    fn test_truncate_str_ascii() {
+        assert_eq!(truncate_str("hello", 3), "hel");
+        assert_eq!(truncate_str("hi", 10), "hi");
+        assert_eq!(truncate_str("", 5), "");
+    }
+
+    #[test]
+    fn test_truncate_str_unicode() {
+        // Multi-byte chars should not panic
+        assert_eq!(truncate_str("héllo", 3), "hél");
+        assert_eq!(truncate_str("你好世界", 2), "你好");
+        assert_eq!(truncate_str("🔥fire", 2), "🔥f");
+    }
 }

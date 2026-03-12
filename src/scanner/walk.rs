@@ -263,6 +263,16 @@ fn read_dir_fallback(path: &Path) -> Result<Vec<DirChild>, std::io::Error> {
         if ft.is_symlink() {
             continue;
         }
+        let name = entry.file_name().to_string_lossy().to_string();
+        // Skip platform metadata files
+        if name == "."
+            || name == ".."
+            || name == ".DS_Store"
+            || name == ".localized"
+            || name == "Thumbs.db"
+        {
+            continue;
+        }
         let is_dir = ft.is_dir();
         let size = if is_dir {
             0
@@ -281,7 +291,6 @@ fn read_dir_fallback(path: &Path) -> Result<Vec<DirChild>, std::io::Error> {
                 })
                 .unwrap_or(0)
         };
-        let name = entry.file_name().to_string_lossy().to_string();
         children.push(DirChild { name, is_dir, size });
     }
     Ok(children)
@@ -435,6 +444,12 @@ fn read_dir_bulk_macos(path: &Path) -> Result<Vec<DirChild>, std::io::Error> {
                 continue;
             }
 
+            // Skip platform metadata files
+            if name == ".DS_Store" || name == ".localized" || name == "Thumbs.db" {
+                offset = record_end;
+                continue;
+            }
+
             // Skip symlinks for security (prevent cycles and escapes)
             if obj_type == VLNK {
                 offset = record_end;
@@ -470,4 +485,19 @@ fn read_i32(buf: &[u8], off: usize) -> i32 {
 #[inline]
 fn read_i64(buf: &[u8], off: usize) -> i64 {
     i64::from_ne_bytes(buf[off..off + 8].try_into().unwrap())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extension_from_name() {
+        assert_eq!(extension_from_name("file.rs"), Some("rs".to_string()));
+        assert_eq!(extension_from_name("file.TAR.GZ"), Some("gz".to_string()));
+        assert_eq!(extension_from_name(".hidden"), None);
+        assert_eq!(extension_from_name("noext"), None);
+        assert_eq!(extension_from_name("file."), None);
+        assert_eq!(extension_from_name(""), None);
+    }
 }

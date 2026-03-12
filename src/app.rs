@@ -710,3 +710,19 @@ fn contains_ignore_case_ascii(haystack: &str, needle: &str) -> bool {
     // Slow path: Unicode (rare, but needed for correctness)
     haystack.to_lowercase().contains(&needle.to_lowercase())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_contains_ignore_case_ascii() {
+        assert!(contains_ignore_case_ascii("HelloWorld", "hello"));
+        assert!(contains_ignore_case_ascii("HelloWorld", "world"));
+        assert!(!contains_ignore_case_ascii("Hello", "xyz"));
+        assert!(contains_ignore_case_ascii("file.RS", "rs"));
+        assert!(!contains_ignore_case_ascii("hi", "hello"));
+        assert!(contains_ignore_case_ascii("test", ""));
+        assert!(contains_ignore_case_ascii("MixedCASE", "mixed"));
+    }
+}

@@ -5,9 +5,21 @@ use std::path::Path;
 use crate::types::FileTree;
 
 /// Delete a file or directory (moves to trash on macOS when possible).
-pub fn delete_path(path: &Path) -> Result<(), String> {
+/// `root` is the scanned root directory - deletion outside this scope is refused.
+pub fn delete_path(path: &Path, root: &Path) -> Result<(), String> {
     if !path.exists() {
         return Err(format!("Path does not exist: {}", path.display()));
+    }
+
+    // Safety: refuse to delete outside root
+    let canonical = path
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve path: {}", e))?;
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve root: {}", e))?;
+    if !canonical.starts_with(&canonical_root) {
+        return Err("Refusing to delete path outside scan root".to_string());
     }
 
     // Try to move to trash using macOS command

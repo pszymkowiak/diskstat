@@ -1,4 +1,3 @@
-use bytesize::ByteSize;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -8,6 +7,7 @@ use std::borrow::Cow;
 
 use crate::app::App;
 use crate::ui::style::UiStyle;
+use crate::ui::treemap::format_size;
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
     let block = Block::default()
@@ -74,7 +74,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
         };
 
         // Size and percentage
-        let size_str = format!("{}", ByteSize(entry.size));
+        let size_str = format_size(entry.size);
         let pct = (entry.size as f64 / root_size * 100.0).min(100.0);
         let pct_str = format!("{:5.1}%", pct);
 
@@ -87,12 +87,18 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
             style.bar_empty.repeat(bar_width - filled)
         );
 
-        // Truncate name to fit
+        // Truncate name to fit (UTF-8 safe)
         let meta_len = size_str.len() + pct_str.len() + bar.len() + 4;
         let prefix_len = prefix.chars().count() + indicator.chars().count();
         let name_max = visible_width.saturating_sub(prefix_len + meta_len);
-        let name: Cow<str> = if entry.name.len() > name_max {
-            Cow::Owned(format!("{}~", &entry.name[..name_max.saturating_sub(1)]))
+        let name: Cow<str> = if entry.name.chars().count() > name_max {
+            let truncated = entry
+                .name
+                .char_indices()
+                .nth(name_max.saturating_sub(1))
+                .map(|(i, _)| &entry.name[..i])
+                .unwrap_or(&entry.name);
+            Cow::Owned(format!("{}~", truncated))
         } else {
             Cow::Borrowed(&entry.name)
         };

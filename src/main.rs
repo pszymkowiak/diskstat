@@ -12,6 +12,7 @@ use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+use clap::Parser;
 use crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers,
 };
@@ -26,14 +27,39 @@ use app::{ActivePane, ActiveTab, App, ScanState};
 use scanner::debug_log::DebugLog;
 use ui::menu::{self, MenuAction};
 
+/// Fast TUI disk usage analyzer — WinDirStat/ncdu alternative
+#[derive(Parser)]
+#[command(name = "diskstat", version, about)]
+struct Cli {
+    /// Directory to analyze (default: current directory or last scanned)
+    #[arg(value_name = "PATH")]
+    path: Option<PathBuf>,
+
+    /// Force a fresh scan (ignore cache)
+    #[arg(short = 'f', long = "fresh")]
+    fresh: bool,
+
+    /// Show version and exit
+    #[arg(long = "info")]
+    info: bool,
+}
+
 fn main() -> io::Result<()> {
+    let cli = Cli::parse();
+
+    if cli.info {
+        println!("diskstat {}", env!("CARGO_PKG_VERSION"));
+        println!("Fast TUI disk usage analyzer");
+        println!("https://github.com/pszymkowiak/diskstat");
+        return Ok(());
+    }
+
     // Open global debug log
     let dlog = DebugLog::open().ok();
 
-    // Parse arguments — fall back to last scanned path if no arg given
-    let root_path = env::args()
-        .nth(1)
-        .map(PathBuf::from)
+    // Resolve path: CLI arg > last scanned > current dir
+    let root_path = cli
+        .path
         .or_else(|| dlog.as_ref().and_then(|d| d.get_last_scanned()))
         .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
@@ -56,7 +82,7 @@ fn main() -> io::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let result = run_app(&mut terminal, root_path, dlog);
+    let result = run_app(&mut terminal, root_path, dlog, cli.fresh);
 
     // Restore terminal
     disable_raw_mode()?;
@@ -78,12 +104,18 @@ fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     root_path: PathBuf,
     dlog: Option<DebugLog>,
+    fresh: bool,
 ) -> io::Result<()> {
     let mut app = App::new(root_path.clone());
 
-    // Try loading from binary cache first (instant startup)
+    // Try loading from binary cache first (instant startup), unless --fresh
     let start = Instant::now();
-    let mut scan_handle = if let Some(tree) = scanner::tree_cache::load_tree(&root_path) {
+    let cached_tree = if !fresh {
+        scanner::tree_cache::load_tree(&root_path)
+    } else {
+        None
+    };
+    let mut scan_handle = if let Some(tree) = cached_tree {
         let elapsed = start.elapsed();
         let node_count = tree.arena.count();
         if let Some(ref d) = dlog {
@@ -313,7 +345,7 @@ fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputA
         match code {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
                 if let Some((path, _size)) = app.confirm_delete.take() {
-                    match actions::delete_path(&path) {
+                    match actions::delete_path(&path, &app.root_path) {
                         Ok(()) => {
                             app.status_message = Some(format!("Deleted: {}", path.display()));
                             return InputAction::ForceRescan(app.root_path.clone());

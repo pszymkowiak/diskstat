@@ -184,3 +184,65 @@ fn worst_ratio(row: &[(usize, f64)], row_sum: f64, side: f64) -> f64 {
 
     worst
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_squarify_basic() {
+        let rect = TreemapRect {
+            x: 0.0,
+            y: 0.0,
+            w: 100.0,
+            h: 100.0,
+        };
+        let sizes = vec![(0, 60.0), (1, 30.0), (2, 10.0)];
+        let layout = squarify(rect, &sizes);
+        assert_eq!(layout.len(), 3);
+        // Total area should approximately match
+        let total_area: f64 = layout.iter().map(|item| item.rect.w * item.rect.h).sum();
+        assert!((total_area - 10000.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_squarify_empty() {
+        let rect = TreemapRect {
+            x: 0.0,
+            y: 0.0,
+            w: 100.0,
+            h: 100.0,
+        };
+        let sizes: Vec<(usize, f64)> = vec![];
+        let layout = squarify(rect, &sizes);
+        assert!(layout.is_empty());
+    }
+
+    #[test]
+    fn test_squarify_single() {
+        let rect = TreemapRect {
+            x: 0.0,
+            y: 0.0,
+            w: 100.0,
+            h: 50.0,
+        };
+        let sizes = vec![(0, 100.0)];
+        let layout = squarify(rect, &sizes);
+        assert_eq!(layout.len(), 1);
+        assert!((layout[0].rect.w - 100.0).abs() < 0.1);
+        assert!((layout[0].rect.h - 50.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_squarify_zero_area() {
+        let rect = TreemapRect {
+            x: 0.0,
+            y: 0.0,
+            w: 0.0,
+            h: 100.0,
+        };
+        let sizes = vec![(0, 100.0)];
+        let layout = squarify(rect, &sizes);
+        assert!(layout.is_empty());
+    }
+}
