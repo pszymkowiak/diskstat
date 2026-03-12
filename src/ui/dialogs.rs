@@ -361,6 +361,77 @@ pub fn draw_search_input(f: &mut Frame, app: &App) {
     }
 }
 
+pub fn draw_top_files(f: &mut Frame, app: &App, style: &UiStyle) {
+    let area = centered_rect(80, 80, f.area());
+    f.render_widget(Clear, area);
+
+    let title = format!(" {} ({}) ", app.strings.top_files, app.top_files_count);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(style.border_type)
+        .title(title)
+        .border_style(Style::default().fg(style.fg_accent));
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    if app.top_files.is_empty() {
+        let text = Paragraph::new("No files found");
+        f.render_widget(text, inner);
+        return;
+    }
+
+    let mut lines: Vec<Line> = Vec::new();
+    let tree = match &app.tree {
+        Some(t) => t,
+        None => {
+            let text = Paragraph::new("No tree data");
+            f.render_widget(text, inner);
+            return;
+        }
+    };
+
+    for (rank, (node_id, size)) in app.top_files.iter().enumerate() {
+        let is_selected = rank == app.top_files_selected;
+        let path = tree.full_path(*node_id);
+
+        let size_str = format_size(*size);
+        let rank_str = format!("{:3}. ", rank + 1);
+
+        let path_str = path.to_string_lossy();
+        let max_path_len = inner.width.saturating_sub(20) as usize;
+        let truncated_path = if path_str.len() > max_path_len {
+            format!(
+                "...{}",
+                &path_str[path_str.len().saturating_sub(max_path_len - 3)..]
+            )
+        } else {
+            path_str.to_string()
+        };
+
+        let line_style = if is_selected {
+            Style::default()
+                .fg(style.selected_fg)
+                .bg(style.selected_bg)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+
+        lines.push(Line::from(vec![
+            Span::styled(rank_str, line_style),
+            Span::styled(
+                format!("{:>8} ", size_str),
+                Style::default().fg(style.fg_accent),
+            ),
+            Span::styled(truncated_path, line_style),
+        ]));
+    }
+
+    let paragraph = Paragraph::new(lines);
+    f.render_widget(paragraph, inner);
+}
+
 /// Create a centered rectangle.
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     let popup_width = r.width * percent_x / 100;

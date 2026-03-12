@@ -44,6 +44,9 @@ pub struct App {
     pub file_count: u64,
     pub total_size: u64,
 
+    // Exclude patterns
+    pub exclude_patterns: Vec<String>,
+
     // Internationalization
     pub lang: Lang,
     pub strings: &'static Strings,
@@ -97,6 +100,12 @@ pub struct App {
     // Subtree rescan target
     pub subtree_target: Option<NodeId>,
 
+    // Top files view
+    pub top_files: Vec<(NodeId, u64)>, // (node_id, size) sorted desc
+    pub top_files_visible: bool,
+    pub top_files_selected: usize,
+    pub top_files_count: usize, // default 50
+
     // Menu bar
     pub menu_state: MenuState,
     pub current_style_index: usize,
@@ -149,7 +158,7 @@ impl TreeState {
 }
 
 impl App {
-    pub fn new(root_path: PathBuf) -> Self {
+    pub fn new(root_path: PathBuf, exclude_patterns: Vec<String>) -> Self {
         let lang = crate::i18n::Lang::detect();
         let strings = crate::i18n::strings(lang);
 
@@ -159,6 +168,7 @@ impl App {
             scan_state: ScanState::Idle,
             file_count: 0,
             total_size: 0,
+            exclude_patterns,
             lang,
             strings,
             active_tab: ActiveTab::TreeMap,
@@ -186,6 +196,10 @@ impl App {
             search_matches: Vec::new(),
             search_index: 0,
             subtree_target: None,
+            top_files: Vec::new(),
+            top_files_visible: false,
+            top_files_selected: 0,
+            top_files_count: 50,
             menu_state: MenuState::new(),
             current_style_index: 0,
             split_pct: 40,
@@ -253,6 +267,7 @@ impl App {
         self.ext_stats = stats;
         self.rebuild_visible_nodes();
         self.update_disk_space();
+        self.compute_top_files();
     }
 
     /// Query disk space for the root path via statvfs.
@@ -479,6 +494,22 @@ impl App {
             self.search_index + 1,
             self.search_matches.len()
         ));
+    }
+
+    /// Compute top N largest files and store in top_files.
+    pub fn compute_top_files(&mut self) {
+        self.top_files.clear();
+        if let Some(tree) = &self.tree {
+            let mut files: Vec<(NodeId, u64)> = tree
+                .root
+                .descendants(&tree.arena)
+                .filter(|&nid| !tree.arena[nid].get().is_dir)
+                .map(|nid| (nid, tree.arena[nid].get().size))
+                .collect();
+            files.sort_by(|a, b| b.1.cmp(&a.1));
+            files.truncate(self.top_files_count);
+            self.top_files = files;
+        }
     }
 
     /// Reset all state for a new scan of a different directory.

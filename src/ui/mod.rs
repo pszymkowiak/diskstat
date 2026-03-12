@@ -49,6 +49,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     if app.search_input.is_some() {
         dialogs::draw_search_input(f, app);
     }
+    if app.top_files_visible {
+        dialogs::draw_top_files(f, app, &ui_style);
+    }
 
     // Draw menu dropdown overlay (on top of everything except search bar)
     menu::draw_dropdown(f, app, menu_bar_area, &ui_style);

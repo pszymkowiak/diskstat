@@ -30,6 +30,7 @@ impl FileTree {
             is_dir: true,
             extension: None,
             depth: 0,
+            mtime: 0,
         });
 
         FileTree {
@@ -131,6 +132,7 @@ pub struct FileEntry {
     pub is_dir: bool,
     pub extension: Option<Arc<str>>,
     pub depth: u16,
+    pub mtime: u64, // Unix timestamp (seconds since epoch)
 }
 
 /// Statistics for files of a given extension.

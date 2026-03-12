@@ -74,6 +74,7 @@ pub struct Strings {
     pub are_you_sure_delete: &'static str,
     pub confirm: &'static str,
     pub cancel: &'static str,
+    pub top_files: &'static str,
 }
 
 /// Get strings for a specific language.
@@ -135,6 +136,7 @@ static EN: Strings = Strings {
     are_you_sure_delete: "Are you sure you want to delete?",
     confirm: "Confirm",
     cancel: "Cancel",
+    top_files: "Top Largest Files",
 };
 
 static FR: Strings = Strings {
@@ -188,4 +190,5 @@ static FR: Strings = Strings {
     are_you_sure_delete: "Êtes-vous sûr de vouloir supprimer ?",
     confirm: "Confirmer",
     cancel: "Annuler",
+    top_files: "Plus gros fichiers",
 };

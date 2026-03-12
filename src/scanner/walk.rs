@@ -19,6 +19,7 @@ pub(crate) struct DirChild {
     pub(crate) name: String,
     pub(crate) is_dir: bool,
     pub(crate) size: u64,
+    pub(crate) mtime: u64,
 }
 
 /// Pending cache write.
@@ -42,11 +43,14 @@ struct ScanContext {
     node_count: AtomicU64,
     /// Maximum nodes allowed (default 10M).
     max_nodes: u64,
+    /// Exclude patterns for filtering directories.
+    exclude_patterns: Vec<String>,
 }
 
 pub fn scan_directory(
     root: PathBuf,
     progress_tx: mpsc::Sender<ScanProgress>,
+    exclude_patterns: Vec<String>,
 ) -> thread::JoinHandle<Option<FileTree>> {
     thread::spawn(move || {
         let root_name = root
@@ -62,6 +66,7 @@ pub fn scan_directory(
             is_dir: true,
             extension: None,
             depth: 0,
+            mtime: 0,
         });
 
         let cache = ScanCache::open(&root).ok();
@@ -75,6 +80,7 @@ pub fn scan_directory(
             extension_intern: Mutex::new(HashMap::new()),
             node_count: AtomicU64::new(0),
             max_nodes: 10_000_000, // 10M nodes limit for OOM protection
+            exclude_patterns,
         });
 
         // Progress reporter
@@ -164,6 +170,16 @@ fn scan_dir_recursive(ctx: &ScanContext, dir_path: &Path, parent_id: NodeId, dep
     {
         let mut arena = ctx.arena.lock().unwrap();
         for child in &children {
+            // Skip excluded directories
+            if child.is_dir
+                && ctx
+                    .exclude_patterns
+                    .iter()
+                    .any(|pat| child.name == *pat || child.name.ends_with(pat))
+            {
+                continue;
+            }
+
             let extension = if !child.is_dir {
                 extension_from_name(&child.name).map(|ext| intern_extension(ctx, ext))
             } else {
@@ -177,6 +193,7 @@ fn scan_dir_recursive(ctx: &ScanContext, dir_path: &Path, parent_id: NodeId, dep
                 is_dir: child.is_dir,
                 extension,
                 depth,
+                mtime: child.mtime,
             });
             parent_id.append(node_id, &mut arena);
 
@@ -274,11 +291,12 @@ fn read_dir_fallback(path: &Path) -> Result<Vec<DirChild>, std::io::Error> {
             continue;
         }
         let is_dir = ft.is_dir();
+        let metadata = entry.metadata();
         let size = if is_dir {
             0
         } else {
-            entry
-                .metadata()
+            metadata
+                .as_ref()
                 .map(|m| {
                     #[cfg(unix)]
                     {
@@ -291,7 +309,18 @@ fn read_dir_fallback(path: &Path) -> Result<Vec<DirChild>, std::io::Error> {
                 })
                 .unwrap_or(0)
         };
-        children.push(DirChild { name, is_dir, size });
+        let mtime = metadata
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        children.push(DirChild {
+            name,
+            is_dir,
+            size,
+            mtime,
+        });
     }
     Ok(children)
 }
@@ -308,6 +337,7 @@ fn read_dir_bulk_macos(path: &Path) -> Result<Vec<DirChild>, std::io::Error> {
     const ATTR_CMN_RETURNED_ATTRS: u32 = 0x80000000;
     const ATTR_CMN_NAME: u32 = 0x00000001;
     const ATTR_CMN_OBJTYPE: u32 = 0x00000008;
+    const ATTR_CMN_MODTIME: u32 = 0x00000400;
     const ATTR_FILE_ALLOCSIZE: u32 = 0x00000004;
     const VDIR: u32 = 2;
     const VLNK: u32 = 5; // Symlink type
@@ -354,7 +384,7 @@ fn read_dir_bulk_macos(path: &Path) -> Result<Vec<DirChild>, std::io::Error> {
     let mut alist = AttrList {
         bitmapcount: ATTR_BIT_MAP_COUNT,
         reserved: 0,
-        commonattr: ATTR_CMN_RETURNED_ATTRS | ATTR_CMN_NAME | ATTR_CMN_OBJTYPE,
+        commonattr: ATTR_CMN_RETURNED_ATTRS | ATTR_CMN_NAME | ATTR_CMN_OBJTYPE | ATTR_CMN_MODTIME,
         volattr: 0,
         dirattr: 0,
         fileattr: ATTR_FILE_ALLOCSIZE,
@@ -419,6 +449,16 @@ fn read_dir_bulk_macos(path: &Path) -> Result<Vec<DirChild>, std::io::Error> {
             let obj_type = read_u32(&buffer, offset);
             offset += 4;
 
+            // ATTR_CMN_MODTIME is a struct timespec (16 bytes: i64 sec + i64 nsec)
+            let mtime = if offset + 16 <= record_end {
+                let sec = read_i64(&buffer, offset);
+                offset += 16; // skip both sec and nsec
+                sec.max(0) as u64
+            } else {
+                offset = record_end;
+                0
+            };
+
             let size = if returned_file & ATTR_FILE_ALLOCSIZE != 0 {
                 if offset + 8 <= record_end {
                     read_i64(&buffer, offset).max(0) as u64
@@ -460,6 +500,7 @@ fn read_dir_bulk_macos(path: &Path) -> Result<Vec<DirChild>, std::io::Error> {
                 name,
                 is_dir: obj_type == VDIR,
                 size: if obj_type == VDIR { 0 } else { size },
+                mtime,
             });
 
             offset = record_end;

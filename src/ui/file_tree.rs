@@ -7,7 +7,7 @@ use std::borrow::Cow;
 
 use crate::app::App;
 use crate::ui::style::UiStyle;
-use crate::utils::format_size;
+use crate::utils::{format_age, format_size};
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
     let title = format!(" {} ", app.strings.file_tree);
@@ -76,6 +76,11 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
 
         // Size and percentage
         let size_str = format_size(entry.size);
+        let age_str = if !entry.is_dir {
+            format_age(entry.mtime)
+        } else {
+            String::new()
+        };
         let pct = (entry.size as f64 / root_size * 100.0).min(100.0);
         let pct_str = format!("{:5.1}%", pct);
 
@@ -89,7 +94,12 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
         );
 
         // Truncate name to fit (UTF-8 safe)
-        let meta_len = size_str.len() + pct_str.len() + bar.len() + 4;
+        let age_display = if !age_str.is_empty() {
+            format!(" {}", age_str)
+        } else {
+            String::new()
+        };
+        let meta_len = size_str.len() + age_display.len() + pct_str.len() + bar.len() + 4;
         let prefix_len = prefix.chars().count() + indicator.chars().count();
         let name_max = visible_width.saturating_sub(prefix_len + meta_len);
         let name: Cow<str> = if entry.name.chars().count() > name_max {
@@ -126,16 +136,29 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
             style.pct_low
         };
 
-        let line = Line::from(vec![
+        let mut line_spans = vec![
             Span::styled(format!("{}{}", prefix, indicator), node_style),
             Span::styled(name_padded, node_style),
             Span::styled(
                 format!(" {} ", size_str),
                 Style::default().fg(style.fg_accent),
             ),
-            Span::styled(pct_str, Style::default().fg(pct_color)),
-            Span::styled(format!(" {}", bar), Style::default().fg(pct_color)),
-        ]);
+        ];
+
+        if !age_str.is_empty() {
+            line_spans.push(Span::styled(
+                age_display,
+                Style::default().fg(ratatui::style::Color::DarkGray),
+            ));
+        }
+
+        line_spans.push(Span::styled(pct_str, Style::default().fg(pct_color)));
+        line_spans.push(Span::styled(
+            format!(" {}", bar),
+            Style::default().fg(pct_color),
+        ));
+
+        let line = Line::from(line_spans);
 
         lines.push(line);
     }

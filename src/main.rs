@@ -44,6 +44,11 @@ struct Cli {
     /// Show version and exit
     #[arg(long = "info")]
     info: bool,
+
+    /// Exclude directories matching these patterns (can be repeated)
+    /// Common patterns: node_modules, .git, target, __pycache__, .cache
+    #[arg(short = 'e', long = "exclude", value_name = "PATTERN")]
+    exclude: Vec<String>,
 }
 
 fn main() -> io::Result<()> {
@@ -84,7 +89,7 @@ fn main() -> io::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let result = run_app(&mut terminal, root_path, dlog, cli.fresh);
+    let result = run_app(&mut terminal, root_path, dlog, cli.fresh, cli.exclude);
 
     // Restore terminal
     disable_raw_mode()?;
@@ -107,8 +112,9 @@ fn run_app(
     root_path: PathBuf,
     dlog: Option<DebugLog>,
     fresh: bool,
+    exclude: Vec<String>,
 ) -> io::Result<()> {
-    let mut app = App::new(root_path.clone());
+    let mut app = App::new(root_path.clone(), exclude.clone());
 
     // Try loading from binary cache first (instant startup), unless --fresh
     let start = Instant::now();
@@ -163,6 +169,7 @@ fn run_app(
         Some(scanner::walk::scan_directory(
             root_path.clone(),
             progress_tx,
+            exclude.clone(),
         ))
     };
 
@@ -246,7 +253,11 @@ fn run_app(
                             let (tx, rx) = mpsc::channel();
                             app.progress_rx = Some(rx);
                             app.scan_state = ScanState::Scanning;
-                            scan_handle = Some(scanner::walk::scan_directory(new_path, tx));
+                            scan_handle = Some(scanner::walk::scan_directory(
+                                new_path,
+                                tx,
+                                app.exclude_patterns.clone(),
+                            ));
                         }
                         InputAction::ForceRescan(path) => {
                             if let Some(ref d) = dlog {
@@ -264,7 +275,11 @@ fn run_app(
                             let (tx, rx) = mpsc::channel();
                             app.progress_rx = Some(rx);
                             app.scan_state = ScanState::Scanning;
-                            scan_handle = Some(scanner::walk::scan_directory(path, tx));
+                            scan_handle = Some(scanner::walk::scan_directory(
+                                path,
+                                tx,
+                                app.exclude_patterns.clone(),
+                            ));
                         }
                         InputAction::SubtreeRescan(target_node, subtree_path) => {
                             if let Some(ref d) = dlog {
@@ -277,7 +292,11 @@ fn run_app(
                                 Some(format!("Rescanning {}...", subtree_path.display()));
                             // Perform subtree rescan synchronously (blocking)
                             let (tx, _rx) = mpsc::channel();
-                            let handle = scanner::walk::scan_directory(subtree_path, tx);
+                            let handle = scanner::walk::scan_directory(
+                                subtree_path,
+                                tx,
+                                app.exclude_patterns.clone(),
+                            );
                             if let Ok(Some(mini_tree)) = handle.join() {
                                 if let Some(tree) = &mut app.tree {
                                     // Remove old children of target node
@@ -331,6 +350,11 @@ fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputA
     if app.show_help {
         app.show_help = false;
         return InputAction::Continue;
+    }
+
+    // Top files dialog
+    if app.top_files_visible {
+        return handle_top_files_input(app, code, modifiers);
     }
 
     // Search input
@@ -521,6 +545,14 @@ fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputA
             app.show_treemap = !app.show_treemap;
         }
 
+        // Top files view
+        KeyCode::Char('f') => {
+            app.top_files_visible = !app.top_files_visible;
+            if app.top_files_visible {
+                app.compute_top_files();
+            }
+        }
+
         // Rescan subtree
         KeyCode::Char('R') => {
             if let Some(selected) = app.tree_state.selected {
@@ -534,6 +566,39 @@ fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputA
             }
         }
 
+        _ => {}
+    }
+
+    InputAction::Continue
+}
+
+fn handle_top_files_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputAction {
+    // Ctrl+C or Esc to close
+    if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('c') {
+        return InputAction::Quit;
+    }
+
+    match code {
+        KeyCode::Esc | KeyCode::Char('f') => {
+            app.top_files_visible = false;
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            if app.top_files_selected > 0 {
+                app.top_files_selected -= 1;
+            }
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            if app.top_files_selected + 1 < app.top_files.len() {
+                app.top_files_selected += 1;
+            }
+        }
+        KeyCode::Enter => {
+            // Navigate to selected file in tree
+            if let Some(&(node_id, _)) = app.top_files.get(app.top_files_selected) {
+                app.expand_to_node(node_id);
+                app.top_files_visible = false;
+            }
+        }
         _ => {}
     }
 
@@ -827,6 +892,7 @@ fn graft_children(
             is_dir: entry.is_dir,
             extension: entry.extension.clone(),
             depth: entry.depth,
+            mtime: entry.mtime,
         });
         target.append(new_node, &mut tree.arena);
         // Recurse for subdirectories

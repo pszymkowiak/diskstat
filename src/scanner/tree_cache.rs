@@ -7,7 +7,7 @@ use indextree::NodeId;
 
 use crate::types::{FileEntry, FileTree};
 
-const MAGIC: &[u8; 4] = b"DST1";
+const MAGIC: &[u8; 4] = b"DST2";
 
 /// Save a completed FileTree to a compact binary cache file.
 pub fn save_tree(tree: &FileTree) -> io::Result<()> {
@@ -59,6 +59,7 @@ pub fn save_tree(tree: &FileTree) -> io::Result<()> {
         }
 
         write_u16(&mut w, entry.depth)?;
+        write_u64(&mut w, entry.mtime)?;
     }
 
     w.flush()?;
@@ -120,6 +121,7 @@ pub fn load_tree(root_path: &Path) -> Option<FileTree> {
         };
 
         let depth = read_u16(&mut r).ok()?;
+        let mtime = read_u64(&mut r).ok()?;
 
         let nid = arena.new_node(FileEntry {
             name,
@@ -128,6 +130,7 @@ pub fn load_tree(root_path: &Path) -> Option<FileTree> {
             is_dir,
             extension,
             depth,
+            mtime,
         });
 
         if parent_idx < 0 {

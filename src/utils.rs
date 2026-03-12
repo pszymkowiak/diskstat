@@ -33,6 +33,30 @@ pub fn truncate_str(s: &str, max_chars: usize) -> &str {
     }
 }
 
+/// Format file age (mtime) as a relative time string.
+pub fn format_age(mtime: u64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    if mtime == 0 || mtime > now {
+        return String::new();
+    }
+    let age_secs = now - mtime;
+    let days = age_secs / 86400;
+    if days == 0 {
+        "<1d".to_string()
+    } else if days < 14 {
+        format!("{}d", days)
+    } else if days < 60 {
+        format!("{}w", days / 7)
+    } else if days < 365 {
+        format!("{}m", days / 30)
+    } else {
+        format!("{}y", days / 365)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -98,6 +98,7 @@ impl ScanCache {
                         name,
                         is_dir: is_dir != 0,
                         size: size as u64,
+                        mtime: 0, // Cache doesn't store mtime for individual entries
                     });
                 }
             }
@@ -143,6 +144,7 @@ impl ScanCache {
                 name: c.name.clone(),
                 is_dir: c.is_dir,
                 size: c.size,
+                mtime: c.mtime,
             })
             .collect();
         self.pending_writes
