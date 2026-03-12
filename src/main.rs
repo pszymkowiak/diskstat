@@ -1,0 +1,790 @@
+#![allow(dead_code)]
+mod actions;
+mod app;
+mod scanner;
+mod treemap_algo;
+mod types;
+mod ui;
+
+use std::env;
+use std::io;
+use std::path::PathBuf;
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
+
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers,
+};
+use crossterm::execute;
+use crossterm::terminal::{
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+};
+use ratatui::Terminal;
+use ratatui::backend::CrosstermBackend;
+
+use app::{ActivePane, ActiveTab, App, ScanState};
+use scanner::debug_log::DebugLog;
+use ui::menu::{MenuAction, self};
+
+fn main() -> io::Result<()> {
+    // Open global debug log
+    let dlog = DebugLog::open().ok();
+
+    // Parse arguments — fall back to last scanned path if no arg given
+    let root_path = env::args().nth(1).map(PathBuf::from).or_else(|| {
+        dlog.as_ref().and_then(|d| d.get_last_scanned())
+    }).unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+
+    let root_path = root_path.canonicalize().unwrap_or(root_path);
+
+    if let Some(ref d) = dlog {
+        d.log_json("app_start", &[
+            ("root_path", &root_path.to_string_lossy()),
+            ("args", &env::args().collect::<Vec<_>>().join(" ")),
+        ]);
+    }
+
+    // Setup terminal
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    let result = run_app(&mut terminal, root_path, dlog);
+
+    // Restore terminal
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
+
+    if let Err(e) = result {
+        eprintln!("Error: {}", e);
+    }
+
+    Ok(())
+}
+
+fn run_app(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    root_path: PathBuf,
+    dlog: Option<DebugLog>,
+) -> io::Result<()> {
+    let mut app = App::new(root_path.clone());
+
+    // Try loading from binary cache first (instant startup)
+    let start = Instant::now();
+    let mut scan_handle = if let Some(tree) = scanner::tree_cache::load_tree(&root_path) {
+        let elapsed = start.elapsed();
+        let node_count = tree.arena.count();
+        if let Some(ref d) = dlog {
+            d.log_json("cache_load_ok", &[
+                ("root_path", &root_path.to_string_lossy()),
+                ("nodes", &node_count.to_string()),
+                ("elapsed_ms", &format!("{:.1}", elapsed.as_secs_f64() * 1000.0)),
+            ]);
+            d.set_last_scanned(&root_path);
+        }
+        app.tree = Some(tree);
+        app.scan_state = ScanState::Done;
+        app.on_scan_complete();
+        app.status_message = Some("Loaded from cache (r to rescan)".to_string());
+        None
+    } else {
+        let elapsed = start.elapsed();
+        if let Some(ref d) = dlog {
+            d.log_json("cache_load_miss", &[
+                ("root_path", &root_path.to_string_lossy()),
+                ("elapsed_ms", &format!("{:.1}", elapsed.as_secs_f64() * 1000.0)),
+            ]);
+        }
+        let (progress_tx, progress_rx) = mpsc::channel();
+        app.progress_rx = Some(progress_rx);
+        app.scan_state = ScanState::Scanning;
+
+        if let Some(ref d) = dlog {
+            d.log_json("scan_start", &[("root_path", &root_path.to_string_lossy())]);
+        }
+        Some(scanner::walk::scan_directory(root_path.clone(), progress_tx))
+    };
+
+    loop {
+        // Poll progress from scanner
+        app.poll_progress();
+
+        // Check if scan thread completed and grab the tree
+        if app.scan_state == ScanState::Done && app.tree.is_none() {
+            if let Some(handle) = scan_handle.take() {
+                match handle.join() {
+                    Ok(Some(tree)) => {
+                        let node_count = tree.arena.count();
+                        let root_size = tree.arena[tree.root].get().size;
+
+                        // Save binary cache for instant reload next time
+                        let _ = scanner::tree_cache::save_tree(&tree);
+
+                        if let Some(ref d) = dlog {
+                            d.log_json("scan_complete", &[
+                                ("root_path", &tree.root_path.to_string_lossy()),
+                                ("nodes", &node_count.to_string()),
+                                ("total_size", &root_size.to_string()),
+                            ]);
+                            d.set_last_scanned(&tree.root_path);
+                        }
+
+                        app.tree = Some(tree);
+                        app.on_scan_complete();
+                        app.needs_redraw = true;
+                    }
+                    Ok(None) => {
+                        if let Some(ref d) = dlog {
+                            d.log("scan_failed", "scan_directory returned None");
+                        }
+                        app.status_message = Some("Scan failed".to_string());
+                    }
+                    Err(_) => {
+                        if let Some(ref d) = dlog {
+                            d.log("scan_panic", "scan thread panicked");
+                        }
+                        app.status_message = Some("Scan thread panicked".to_string());
+                    }
+                }
+            }
+        }
+
+        // Draw only when needed
+        if app.needs_redraw {
+            terminal.draw(|f| ui::draw(f, &mut app))?;
+            app.needs_redraw = false;
+        }
+
+        let poll_timeout = if app.scan_state == ScanState::Scanning {
+            Duration::from_millis(50)
+        } else {
+            Duration::from_millis(200)
+        };
+
+        // Poll events
+        if event::poll(poll_timeout)? {
+            match event::read()? {
+                Event::Key(key) => {
+                    app.needs_redraw = true;
+                    match handle_input(&mut app, key.code, key.modifiers) {
+                        InputAction::Quit => {
+                            if let Some(ref d) = dlog {
+                                d.log("app_quit", "{}");
+                                d.trim(5000);
+                            }
+                            return Ok(());
+                        }
+                        InputAction::Rescan(new_path) => {
+                            if let Some(ref d) = dlog {
+                                d.log_json("rescan", &[
+                                    ("root_path", &new_path.to_string_lossy()),
+                                ]);
+                            }
+                            app.reset_for_scan(new_path.clone());
+                            let (tx, rx) = mpsc::channel();
+                            app.progress_rx = Some(rx);
+                            app.scan_state = ScanState::Scanning;
+                            scan_handle = Some(scanner::walk::scan_directory(new_path, tx));
+                        }
+                        InputAction::ForceRescan(path) => {
+                            if let Some(ref d) = dlog {
+                                d.log_json("force_rescan", &[
+                                    ("root_path", &path.to_string_lossy()),
+                                ]);
+                            }
+                            // Invalidate both caches then rescan
+                            scanner::tree_cache::invalidate(&path);
+                            if let Ok(mut cache) = scanner::cache::ScanCache::open(&path) {
+                                let _ = cache.invalidate_all();
+                            }
+                            app.reset_for_scan(path.clone());
+                            let (tx, rx) = mpsc::channel();
+                            app.progress_rx = Some(rx);
+                            app.scan_state = ScanState::Scanning;
+                            scan_handle = Some(scanner::walk::scan_directory(path, tx));
+                        }
+                        InputAction::SubtreeRescan(target_node, subtree_path) => {
+                            if let Some(ref d) = dlog {
+                                d.log_json("subtree_rescan", &[
+                                    ("path", &subtree_path.to_string_lossy()),
+                                ]);
+                            }
+                            app.status_message = Some(format!("Rescanning {}...", subtree_path.display()));
+                            // Perform subtree rescan synchronously (blocking)
+                            let (tx, _rx) = mpsc::channel();
+                            let handle = scanner::walk::scan_directory(subtree_path, tx);
+                            if let Ok(Some(mini_tree)) = handle.join() {
+                                if let Some(tree) = &mut app.tree {
+                                    // Remove old children of target node
+                                    let old_children: Vec<_> = target_node.children(&tree.arena).collect();
+                                    for child in old_children {
+                                        child.detach(&mut tree.arena);
+                                    }
+                                    // Graft new children from mini_tree
+                                    graft_children(tree, target_node, &mini_tree, mini_tree.root);
+                                    tree.compute_sizes();
+                                }
+                                // Recompute extension stats
+                                if let Some(tree) = &app.tree {
+                                    let stats = scanner::tree::compute_extension_stats(tree);
+                                    let color_map = scanner::tree::extension_color_map(&stats);
+                                    app.ext_stats = stats;
+                                    app.ext_color_map = color_map;
+
+                                    let root_entry = tree.arena[tree.root].get();
+                                    app.file_count = root_entry.file_count;
+                                    app.total_size = root_entry.size;
+                                }
+                                app.rebuild_visible_nodes();
+                                app.subtree_target = None;
+                                app.status_message = Some("Subtree rescan complete".to_string());
+                            } else {
+                                app.subtree_target = None;
+                                app.status_message = Some("Subtree rescan failed".to_string());
+                            }
+                        }
+                        InputAction::Continue => {}
+                    }
+                }
+                Event::Mouse(mouse) => {
+                    app.needs_redraw = true;
+                    handle_mouse(&mut app, mouse);
+                }
+                Event::Resize(_, _) => {
+                    app.needs_redraw = true;
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// Return value: (should_quit, new_scan_path)
+fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputAction {
+    // Handle dialogs first (highest priority)
+    if app.show_help {
+        app.show_help = false;
+        return InputAction::Continue;
+    }
+
+    // Search input
+    if app.search_input.is_some() {
+        return handle_search_input(app, code, modifiers);
+    }
+
+    // Path input dialog
+    if app.path_input.is_some() {
+        return handle_path_input(app, code, modifiers);
+    }
+
+    if app.confirm_delete.is_some() {
+        match code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                if let Some((path, _size)) = app.confirm_delete.take() {
+                    match actions::delete_path(&path) {
+                        Ok(()) => {
+                            app.status_message = Some(format!("Deleted: {}", path.display()));
+                            return InputAction::ForceRescan(app.root_path.clone());
+                        }
+                        Err(e) => {
+                            app.status_message = Some(e);
+                        }
+                    }
+                }
+            }
+            _ => {
+                app.confirm_delete = None;
+            }
+        }
+        return InputAction::Continue;
+    }
+
+    // Menu input (after dialogs, before global keys)
+    if app.menu_state.active {
+        return handle_menu_input(app, code, modifiers);
+    }
+
+    // F10 toggles menu
+    if code == KeyCode::F(10) {
+        app.menu_state.active = true;
+        app.menu_state.selected_menu = 0;
+        app.menu_state.dropdown_open = false;
+        app.menu_state.selected_item = 0;
+        return InputAction::Continue;
+    }
+
+    // Ctrl+C always quits
+    if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('c') {
+        return InputAction::Quit;
+    }
+
+    match code {
+        KeyCode::Char('q') | KeyCode::Esc => return InputAction::Quit,
+        KeyCode::Char('?') => app.show_help = !app.show_help,
+
+        // Tab switching
+        KeyCode::Char('1') => app.active_tab = ActiveTab::TreeMap,
+        KeyCode::Char('2') => app.active_tab = ActiveTab::Extensions,
+        KeyCode::Char('3') => app.active_tab = ActiveTab::Duplicates,
+        KeyCode::Tab => {
+            app.active_pane = match app.active_pane {
+                ActivePane::Tree => ActivePane::Map,
+                ActivePane::Map => ActivePane::Tree,
+            };
+        }
+
+        // Tree navigation
+        KeyCode::Up | KeyCode::Char('k') => {
+            match app.active_tab {
+                ActiveTab::TreeMap => app.tree_up(),
+                ActiveTab::Extensions => {
+                    if app.ext_selected_index > 0 {
+                        app.ext_selected_index -= 1;
+                    }
+                }
+                ActiveTab::Duplicates => {
+                    if app.dupes_selected_index > 0 {
+                        app.dupes_selected_index -= 1;
+                    }
+                }
+            }
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            match app.active_tab {
+                ActiveTab::TreeMap => app.tree_down(),
+                ActiveTab::Extensions => {
+                    if app.ext_selected_index + 1 < app.ext_stats.len() {
+                        app.ext_selected_index += 1;
+                    }
+                }
+                ActiveTab::Duplicates => {
+                    if app.dupes_selected_index + 1 < app.duplicates.len() {
+                        app.dupes_selected_index += 1;
+                    }
+                }
+            }
+        }
+        KeyCode::Left | KeyCode::Char('h') => app.tree_collapse(),
+        KeyCode::Right | KeyCode::Char('l') => app.tree_expand(),
+
+        // Treemap zoom
+        KeyCode::Enter => app.treemap_enter(),
+        KeyCode::Backspace => app.treemap_back(),
+
+        // Actions
+        KeyCode::Char('d') | KeyCode::Delete => {
+            if let Some(selected) = app.tree_state.selected {
+                if let Some(tree) = &app.tree {
+                    let size = tree.arena[selected].get().size;
+                    if let Some(path) = app.selected_path() {
+                        app.confirm_delete = Some((path, size));
+                    }
+                }
+            }
+        }
+        KeyCode::Char('o') => {
+            if let Some(path) = app.selected_path() {
+                match actions::open_in_finder(&path) {
+                    Ok(()) => app.status_message = Some(format!("Opened: {}", path.display())),
+                    Err(e) => app.status_message = Some(e),
+                }
+            }
+        }
+        KeyCode::Char('c') => {
+            if let Some(path) = app.selected_path() {
+                match actions::copy_to_clipboard(&path) {
+                    Ok(()) => app.status_message = Some("Path copied to clipboard".to_string()),
+                    Err(e) => app.status_message = Some(e),
+                }
+            }
+        }
+        KeyCode::Char('s') => {
+            // Scan for duplicates
+            if app.active_tab == ActiveTab::Duplicates && !app.dupes_scanning {
+                if let Some(tree) = &app.tree {
+                    app.dupes_scanning = true;
+                    app.status_message = Some("Scanning for duplicates...".to_string());
+                    let dupes = scanner::dupes::find_duplicates(tree);
+                    app.duplicates = dupes;
+                    app.dupes_scanning = false;
+                    app.status_message = Some(format!(
+                        "Found {} duplicate groups",
+                        app.duplicates.len()
+                    ));
+                }
+            }
+        }
+
+        // Change directory
+        KeyCode::Char('p') => {
+            app.open_path_input();
+        }
+
+        // Rescan current directory (force, ignores cache)
+        KeyCode::Char('r') => {
+            return InputAction::ForceRescan(app.root_path.clone());
+        }
+
+        // Search (/ like vim)
+        KeyCode::Char('/') => {
+            app.search_input = Some(String::new());
+        }
+
+        // Next/prev search match
+        KeyCode::Char('n') => {
+            if app.search_query.is_some() {
+                app.search_next();
+            }
+        }
+        KeyCode::Char('N') => {
+            if app.search_query.is_some() {
+                app.search_prev();
+            }
+        }
+
+        // Export CSV
+        KeyCode::Char('e') => {
+            if let Some(tree) = &app.tree {
+                match actions::export_csv(tree) {
+                    Ok(path) => {
+                        app.status_message = Some(format!("Exported to {}", path));
+                    }
+                    Err(e) => {
+                        app.status_message = Some(e);
+                    }
+                }
+            }
+        }
+
+        // Toggle treemap panel
+        KeyCode::Char('t') => {
+            app.show_treemap = !app.show_treemap;
+        }
+
+        // Rescan subtree
+        KeyCode::Char('R') => {
+            if let Some(selected) = app.tree_state.selected {
+                if let Some(tree) = &app.tree {
+                    if tree.arena[selected].get().is_dir && selected != tree.root {
+                        app.subtree_target = Some(selected);
+                        let subtree_path = tree.full_path(selected);
+                        return InputAction::SubtreeRescan(selected, subtree_path);
+                    }
+                }
+            }
+        }
+
+        _ => {}
+    }
+
+    InputAction::Continue
+}
+
+fn handle_menu_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputAction {
+    // Ctrl+C always quits even in menu
+    if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('c') {
+        return InputAction::Quit;
+    }
+
+    match code {
+        KeyCode::Esc | KeyCode::F(10) => {
+            app.menu_state.active = false;
+            app.menu_state.dropdown_open = false;
+        }
+        KeyCode::Left => {
+            if app.menu_state.selected_menu > 0 {
+                app.menu_state.selected_menu -= 1;
+            } else {
+                app.menu_state.selected_menu = menu::MENU_COUNT - 1;
+            }
+            app.menu_state.selected_item = 0;
+        }
+        KeyCode::Right => {
+            app.menu_state.selected_menu = (app.menu_state.selected_menu + 1) % menu::MENU_COUNT;
+            app.menu_state.selected_item = 0;
+        }
+        KeyCode::Down => {
+            if !app.menu_state.dropdown_open {
+                app.menu_state.dropdown_open = true;
+                app.menu_state.selected_item = 0;
+            } else {
+                let count = menu::item_count(app.menu_state.selected_menu);
+                if count > 0 {
+                    app.menu_state.selected_item = (app.menu_state.selected_item + 1) % count;
+                }
+            }
+        }
+        KeyCode::Up => {
+            if app.menu_state.dropdown_open {
+                let count = menu::item_count(app.menu_state.selected_menu);
+                if count > 0 {
+                    if app.menu_state.selected_item == 0 {
+                        app.menu_state.selected_item = count - 1;
+                    } else {
+                        app.menu_state.selected_item -= 1;
+                    }
+                }
+            }
+        }
+        KeyCode::Enter => {
+            if !app.menu_state.dropdown_open {
+                app.menu_state.dropdown_open = true;
+                app.menu_state.selected_item = 0;
+            } else {
+                let action = menu::item_action(
+                    app.menu_state.selected_menu,
+                    app.menu_state.selected_item,
+                    app.current_style_index,
+                );
+                app.menu_state.active = false;
+                app.menu_state.dropdown_open = false;
+                return dispatch_menu_action(app, action);
+            }
+        }
+        _ => {}
+    }
+
+    InputAction::Continue
+}
+
+fn dispatch_menu_action(app: &mut App, action: MenuAction) -> InputAction {
+    match action {
+        MenuAction::None => InputAction::Continue,
+        MenuAction::OpenDir => {
+            app.open_path_input();
+            InputAction::Continue
+        }
+        MenuAction::Rescan => {
+            InputAction::ForceRescan(app.root_path.clone())
+        }
+        MenuAction::ExportCsv => {
+            if let Some(tree) = &app.tree {
+                match actions::export_csv(tree) {
+                    Ok(path) => app.status_message = Some(format!("Exported to {}", path)),
+                    Err(e) => app.status_message = Some(e),
+                }
+            }
+            InputAction::Continue
+        }
+        MenuAction::Quit => InputAction::Quit,
+        MenuAction::SwitchTab(tab) => {
+            app.active_tab = tab;
+            InputAction::Continue
+        }
+        MenuAction::TogglePane => {
+            app.active_pane = match app.active_pane {
+                ActivePane::Tree => ActivePane::Map,
+                ActivePane::Map => ActivePane::Tree,
+            };
+            InputAction::Continue
+        }
+        MenuAction::ToggleTreemap => {
+            app.show_treemap = !app.show_treemap;
+            InputAction::Continue
+        }
+        MenuAction::SetStyle(idx) => {
+            app.current_style_index = idx;
+            let names = ui::style::all_styles();
+            app.status_message = Some(format!("Style: {}", names[idx]));
+            InputAction::Continue
+        }
+        MenuAction::ShowHelp => {
+            app.show_help = true;
+            InputAction::Continue
+        }
+    }
+}
+
+fn handle_path_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputAction {
+    // Ctrl+C cancels
+    if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('c') {
+        app.path_input = None;
+        return InputAction::Continue;
+    }
+
+    let input = app.path_input.as_mut().unwrap();
+
+    match code {
+        KeyCode::Esc => {
+            app.path_input = None;
+        }
+        KeyCode::Enter => {
+            if let Some(path) = input.validate() {
+                app.path_input = None;
+                return InputAction::Rescan(path);
+            } else {
+                app.status_message = Some("Invalid directory path".to_string());
+            }
+        }
+        KeyCode::Tab => {
+            input.complete();
+        }
+        KeyCode::Backspace => {
+            input.backspace();
+        }
+        KeyCode::Delete => {
+            input.delete();
+        }
+        KeyCode::Left => {
+            input.move_left();
+        }
+        KeyCode::Right => {
+            input.move_right();
+        }
+        KeyCode::Home => {
+            input.move_home();
+        }
+        KeyCode::End => {
+            input.move_end();
+        }
+        KeyCode::Char(c) => {
+            input.insert_char(c);
+        }
+        _ => {}
+    }
+
+    InputAction::Continue
+}
+
+fn handle_search_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputAction {
+    // Ctrl+C cancels
+    if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('c') {
+        app.search_input = None;
+        return InputAction::Continue;
+    }
+
+    match code {
+        KeyCode::Esc => {
+            app.search_input = None;
+            app.search_query = None;
+            app.search_matches.clear();
+            app.search_index = 0;
+        }
+        KeyCode::Enter => {
+            if let Some(input) = app.search_input.take() {
+                if !input.is_empty() {
+                    app.search_query = Some(input);
+                    app.search_execute();
+                }
+            }
+        }
+        KeyCode::Backspace => {
+            if let Some(input) = app.search_input.as_mut() {
+                input.pop();
+            }
+        }
+        KeyCode::Char(c) => {
+            if let Some(input) = app.search_input.as_mut() {
+                input.push(c);
+            }
+        }
+        _ => {}
+    }
+
+    InputAction::Continue
+}
+
+enum InputAction {
+    Continue,
+    Quit,
+    Rescan(PathBuf),
+    ForceRescan(PathBuf),
+    SubtreeRescan(indextree::NodeId, PathBuf),
+}
+
+fn handle_mouse(app: &mut App, mouse: crossterm::event::MouseEvent) {
+    use crossterm::event::{MouseButton, MouseEventKind};
+
+    let mx = mouse.column;
+    let my = mouse.row;
+
+    match mouse.kind {
+        MouseEventKind::Down(MouseButton::Left) => {
+            // Check menu bar click first (row 0 = menu bar)
+            if menu::handle_menu_click(&mut app.menu_state, mx, my, 0) {
+                return;
+            }
+
+            // If menu is open and clicked elsewhere, close it
+            if app.menu_state.active {
+                app.menu_state.active = false;
+                app.menu_state.dropdown_open = false;
+                return;
+            }
+
+            // Check if clicking on the split separator (±1 col tolerance)
+            if app.show_treemap && app.active_tab == ActiveTab::TreeMap {
+                let sep = app.last_split_x;
+                let area = app.content_area;
+                if mx >= sep.saturating_sub(1)
+                    && mx <= sep.saturating_add(1)
+                    && my >= area.y
+                    && my < area.y + area.height
+                {
+                    app.dragging_split = true;
+                    return;
+                }
+            }
+
+            app.status_message = None;
+
+            // Hit-test treemap: iterate in reverse (last = smallest/deepest rectangle)
+            for hit in app.treemap_hits.iter().rev() {
+                if mx >= hit.x
+                    && mx < hit.x + hit.w
+                    && my >= hit.y
+                    && my < hit.y + hit.h
+                {
+                    app.expand_to_node(hit.node_id);
+                    break;
+                }
+            }
+        }
+        MouseEventKind::Drag(MouseButton::Left) => {
+            if app.dragging_split {
+                let area = app.content_area;
+                if area.width > 0 {
+                    let relative = mx.saturating_sub(area.x);
+                    let pct = (relative as u32 * 100 / area.width as u32) as u16;
+                    app.split_pct = pct.clamp(10, 90);
+                }
+            }
+        }
+        MouseEventKind::Up(MouseButton::Left) => {
+            app.dragging_split = false;
+        }
+        _ => {}
+    }
+}
+
+/// Graft children from a mini-tree (from subtree rescan) into the main tree.
+fn graft_children(
+    tree: &mut crate::types::FileTree,
+    target: indextree::NodeId,
+    src: &crate::types::FileTree,
+    src_root: indextree::NodeId,
+) {
+    for src_child in src_root.children(&src.arena) {
+        let entry = src.arena[src_child].get();
+        let new_node = tree.arena.new_node(crate::types::FileEntry {
+            name: entry.name.clone(),
+            size: entry.size,
+            file_count: entry.file_count,
+            is_dir: entry.is_dir,
+            extension: entry.extension.clone(),
+            depth: entry.depth,
+        });
+        target.append(new_node, &mut tree.arena);
+        // Recurse for subdirectories
+        if entry.is_dir {
+            graft_children(tree, new_node, src, src_child);
+        }
+    }
+}
