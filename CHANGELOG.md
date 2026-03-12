@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/pszymkowiak/diskstat/compare/v0.3.0...v0.4.0) (2026-03-12)
+
+
+### Features
+
+* exclude patterns, top largest files view, file age display ([7afc70f](https://github.com/pszymkowiak/diskstat/commit/7afc70f9abf6949708165c09ded4202dd59e3aaa))
+
 ## [0.3.0](https://github.com/pszymkowiak/diskstat/compare/v0.2.0...v0.3.0) (2026-03-12)
 
 
