@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.0](https://github.com/pszymkowiak/diskstat/compare/v0.6.0...v0.7.0) (2026-03-12)
+
+
+### Features
+
+* add size filtering (show only files/dirs ≥ threshold) ([4803d26](https://github.com/pszymkowiak/diskstat/commit/4803d26974b683d774339791fab84b867c25797d))
+
+
+### Bug Fixes
+
+* add market research step + web tools to improver agent ([d0d0423](https://github.com/pszymkowiak/diskstat/commit/d0d0423fc2ab1b8be2f8435dd2aedc2707bc648b))
+
 ## [0.6.0](https://github.com/pszymkowiak/diskstat/compare/v0.5.0...v0.6.0) (2026-03-12)
 
 
