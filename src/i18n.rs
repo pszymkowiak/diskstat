@@ -1,0 +1,191 @@
+use std::env;
+
+/// Language selection for the application
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Lang {
+    En,
+    Fr,
+}
+
+impl Lang {
+    /// Detect language from LANG/LC_ALL environment variable.
+    pub fn detect() -> Self {
+        let lang = env::var("LANG")
+            .or_else(|_| env::var("LC_ALL"))
+            .unwrap_or_default()
+            .to_lowercase();
+        if lang.starts_with("fr") {
+            Lang::Fr
+        } else {
+            Lang::En
+        }
+    }
+}
+
+/// All translatable strings for the application.
+pub struct Strings {
+    pub scanning: &'static str,
+    pub scan_complete: &'static str,
+    pub loaded_from_cache: &'static str,
+    pub no_matches: &'static str,
+    pub match_n_of_m: &'static str, // "Match {}/{}"
+    pub help_title: &'static str,
+    pub file_tree: &'static str,
+    pub treemap: &'static str,
+    pub extensions: &'static str,
+    pub duplicates: &'static str,
+    pub confirm_delete: &'static str,
+    pub confirm_delete_prompt: &'static str,
+    pub confirm_yes: &'static str,
+    pub confirm_no: &'static str,
+    pub deleted: &'static str,
+    pub scan_failed: &'static str,
+    pub scan_thread_panicked: &'static str,
+    pub press_any_key: &'static str,
+    pub rescan: &'static str,
+    pub search: &'static str,
+    pub path_input: &'static str,
+    pub path_input_hint: &'static str,
+    pub files: &'static str,
+    pub dirs: &'static str,
+    pub free: &'static str,
+    pub total: &'static str,
+    pub wasted: &'static str,
+    pub export_csv: &'static str,
+    pub done: &'static str,
+    pub idle: &'static str,
+    pub disk: &'static str,
+    pub used: &'static str,
+    pub size: &'static str,
+    pub opened: &'static str,
+    pub path_copied: &'static str,
+    pub rescanning: &'static str,
+    pub subtree_rescan_complete: &'static str,
+    pub subtree_rescan_failed: &'static str,
+    pub found_duplicate_groups: &'static str,
+    pub scanning_duplicates: &'static str,
+    pub no_duplicates_press_s: &'static str,
+    pub duplicate_groups_wasted: &'static str,
+    pub exported_to: &'static str,
+    pub valid_directory: &'static str,
+    pub not_valid_directory: &'static str,
+    pub tab_autocomplete: &'static str,
+    pub tab_completion: &'static str,
+    pub are_you_sure_delete: &'static str,
+    pub confirm: &'static str,
+    pub cancel: &'static str,
+}
+
+/// Get strings for a specific language.
+pub fn strings(lang: Lang) -> &'static Strings {
+    match lang {
+        Lang::En => &EN,
+        Lang::Fr => &FR,
+    }
+}
+
+static EN: Strings = Strings {
+    scanning: "Scanning...",
+    scan_complete: "Scan complete",
+    loaded_from_cache: "Loaded from cache (r to rescan)",
+    no_matches: "No matches found",
+    match_n_of_m: "Match",
+    help_title: "Help",
+    file_tree: "File Tree",
+    treemap: "Treemap",
+    extensions: "Extensions",
+    duplicates: "Duplicates",
+    confirm_delete: "Confirm Delete",
+    confirm_delete_prompt: "Delete? (y/n)",
+    confirm_yes: "y",
+    confirm_no: "n",
+    deleted: "Deleted",
+    scan_failed: "Scan failed",
+    scan_thread_panicked: "Scan thread panicked",
+    press_any_key: "Press any key to close",
+    rescan: "r: rescan",
+    search: "Search",
+    path_input: "Path",
+    path_input_hint: "Change Directory (Enter=confirm, Esc=cancel, Tab=complete)",
+    files: "files",
+    dirs: "dirs",
+    free: "free",
+    total: "total",
+    wasted: "wasted",
+    export_csv: "Exported to CSV",
+    done: "DONE",
+    idle: "IDLE",
+    disk: "Disk",
+    used: "used",
+    size: "Size",
+    opened: "Opened",
+    path_copied: "Path copied to clipboard",
+    rescanning: "Rescanning",
+    subtree_rescan_complete: "Subtree rescan complete",
+    subtree_rescan_failed: "Subtree rescan failed",
+    found_duplicate_groups: "Found {} duplicate groups",
+    scanning_duplicates: "Scanning for duplicates...",
+    no_duplicates_press_s: "No duplicates found. Press 's' to scan for duplicates.",
+    duplicate_groups_wasted: "Duplicates - {} groups, {} wasted",
+    exported_to: "Exported to {}",
+    valid_directory: "Valid directory",
+    not_valid_directory: "Not a valid directory",
+    tab_autocomplete: "Tab: autocomplete path",
+    tab_completion: "Tab: completion {}/{}",
+    are_you_sure_delete: "Are you sure you want to delete?",
+    confirm: "Confirm",
+    cancel: "Cancel",
+};
+
+static FR: Strings = Strings {
+    scanning: "Analyse en cours...",
+    scan_complete: "Analyse terminée",
+    loaded_from_cache: "Chargé depuis le cache (r pour rescanner)",
+    no_matches: "Aucun résultat",
+    match_n_of_m: "Résultat",
+    help_title: "Aide",
+    file_tree: "Arborescence",
+    treemap: "Treemap",
+    extensions: "Extensions",
+    duplicates: "Doublons",
+    confirm_delete: "Confirmer la suppression",
+    confirm_delete_prompt: "Supprimer ? (o/n)",
+    confirm_yes: "o",
+    confirm_no: "n",
+    deleted: "Supprimé",
+    scan_failed: "Échec de l'analyse",
+    scan_thread_panicked: "Le thread d'analyse a planté",
+    press_any_key: "Appuyez sur une touche pour fermer",
+    rescan: "r: rescanner",
+    search: "Recherche",
+    path_input: "Chemin",
+    path_input_hint: "Changer de répertoire (Entrée=confirmer, Esc=annuler, Tab=compléter)",
+    files: "fichiers",
+    dirs: "dossiers",
+    free: "libre",
+    total: "total",
+    wasted: "gaspillé",
+    export_csv: "Exporté en CSV",
+    done: "TERMINÉ",
+    idle: "INACTIF",
+    disk: "Disque",
+    used: "utilisé",
+    size: "Taille",
+    opened: "Ouvert",
+    path_copied: "Chemin copié dans le presse-papiers",
+    rescanning: "Nouvelle analyse",
+    subtree_rescan_complete: "Analyse du sous-arbre terminée",
+    subtree_rescan_failed: "Échec de l'analyse du sous-arbre",
+    found_duplicate_groups: "{} groupes de doublons trouvés",
+    scanning_duplicates: "Recherche de doublons...",
+    no_duplicates_press_s: "Aucun doublon trouvé. Appuyez sur 's' pour chercher les doublons.",
+    duplicate_groups_wasted: "Doublons - {} groupes, {} gaspillé",
+    exported_to: "Exporté vers {}",
+    valid_directory: "Répertoire valide",
+    not_valid_directory: "Répertoire invalide",
+    tab_autocomplete: "Tab: compléter le chemin",
+    tab_completion: "Tab: complétion {}/{}",
+    are_you_sure_delete: "Êtes-vous sûr de vouloir supprimer ?",
+    confirm: "Confirmer",
+    cancel: "Annuler",
+};

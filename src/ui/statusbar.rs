@@ -14,35 +14,37 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
     match app.scan_state {
         ScanState::Scanning => {
             spans.push(Span::styled(
-                " SCANNING ",
+                format!(" {} ", app.strings.scanning.to_uppercase()),
                 Style::default()
                     .fg(Color::Black)
                     .bg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             ));
             spans.push(Span::raw(format!(
-                " {} files | {} ",
+                " {} {} | {} ",
                 app.file_count,
+                app.strings.files,
                 ByteSize(app.total_size)
             )));
         }
         ScanState::Done => {
             spans.push(Span::styled(
-                " DONE ",
+                format!(" {} ", app.strings.done),
                 Style::default()
                     .fg(Color::Black)
                     .bg(Color::Green)
                     .add_modifier(Modifier::BOLD),
             ));
             spans.push(Span::raw(format!(
-                " {} files | {} ",
+                " {} {} | {} ",
                 app.file_count,
+                app.strings.files,
                 ByteSize(app.total_size)
             )));
         }
         ScanState::Idle => {
             spans.push(Span::styled(
-                " IDLE ",
+                format!(" {} ", app.strings.idle),
                 Style::default().fg(Color::Black).bg(Color::Gray),
             ));
         }
@@ -59,10 +61,13 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
         spans.push(Span::styled(" | ", Style::default().fg(Color::DarkGray)));
         spans.push(Span::styled(
             format!(
-                "Disk: {} free / {} ({}% used)",
+                "{}: {} {} / {} ({}% {})",
+                app.strings.disk,
                 ByteSize(app.disk_free),
+                app.strings.free,
                 ByteSize(app.disk_total),
-                pct
+                pct,
+                app.strings.used
             ),
             Style::default().fg(Color::Rgb(140, 140, 140)),
         ));

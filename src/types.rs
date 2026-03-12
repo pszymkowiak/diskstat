@@ -15,6 +15,7 @@ pub struct FileTree {
 }
 
 impl FileTree {
+    /// Create a new empty file tree rooted at the given path.
     pub fn new(root_path: PathBuf) -> Self {
         let mut arena = Arena::new();
         let root_name = root_path
@@ -64,6 +65,7 @@ impl FileTree {
     }
 
     /// Invalidate the sorted children cache (call after tree mutations).
+    /// Invalidate the sorted children cache (call after tree mutations).
     pub fn invalidate_sort_cache(&self) {
         self.sorted_cache.borrow_mut().clear();
     }
@@ -92,6 +94,7 @@ impl FileTree {
     }
 
     /// Get the total number of nodes.
+    /// Get the total number of nodes in the tree.
     pub fn node_count(&self) -> usize {
         self.arena.count()
     }
@@ -120,6 +123,7 @@ impl FileTree {
     }
 }
 
+/// A single entry in the file tree (file or directory).
 pub struct FileEntry {
     pub name: String,
     pub size: u64,
@@ -129,6 +133,7 @@ pub struct FileEntry {
     pub depth: u16,
 }
 
+/// Statistics for files of a given extension.
 #[derive(Clone)]
 pub struct ExtensionStats {
     pub extension: String,
@@ -137,6 +142,7 @@ pub struct ExtensionStats {
     pub color: Color,
 }
 
+/// A group of duplicate files with the same hash.
 #[derive(Clone)]
 pub struct DuplicateGroup {
     pub hash: String,
@@ -145,6 +151,7 @@ pub struct DuplicateGroup {
 }
 
 impl DuplicateGroup {
+    /// Calculate wasted space (size * (count - 1)).
     pub fn wasted_size(&self) -> u64 {
         self.size * (self.paths.len() as u64 - 1)
     }
@@ -184,6 +191,7 @@ pub const EXT_COLORS: &[Color] = &[
     Color::Rgb(255, 150, 220), // orchid pink
 ];
 
+/// Get a color for a given extension index (wraps around).
 pub fn color_for_index(idx: usize) -> Color {
     EXT_COLORS[idx % EXT_COLORS.len()]
 }

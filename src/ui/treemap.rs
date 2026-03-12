@@ -13,6 +13,7 @@ use crate::app::App;
 use crate::treemap_algo::{squarify, TreemapRect};
 use crate::types::FileTree;
 use crate::ui::style::UiStyle;
+use crate::utils::{format_size_into, truncate_str};
 
 /// Maximum recursion depth for filling subdirectories in the treemap.
 /// Beyond this depth, directories are filled with a single averaged color.
@@ -59,10 +60,11 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, ui_style: &UiStyle) -> Vec<Tre
     let estimated_hits = ((area.width as usize * area.height as usize) / 100).max(100);
     let mut hits: Vec<TreemapHit> = Vec::with_capacity(estimated_hits);
 
+    let title = format!(" {} ", app.strings.treemap);
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(ui_style.border_type)
-        .title(" Treemap ")
+        .title(title)
         .border_style(Style::default().fg(ui_style.border_color));
 
     let inner = block.inner(area);
@@ -305,13 +307,7 @@ fn dominant_color(tree: &FileTree, node_id: NodeId, color_map: &HashMap<String, 
     best_color
 }
 
-/// Safely truncate a string to at most `max_chars` characters without panicking on multi-byte chars.
-fn truncate_str(s: &str, max_chars: usize) -> &str {
-    match s.char_indices().nth(max_chars) {
-        Some((idx, _)) => &s[..idx],
-        None => s,
-    }
-}
+// truncate_str now imported from utils module
 
 /// Draw a label on a rectangle if it's large enough.
 fn draw_label(
@@ -449,63 +445,16 @@ fn draw_selection_border(buf: &mut Buffer, area: Rect, rect: TreemapRect, ui_sty
     }
 }
 
-/// Format size into a reusable buffer (optimized to avoid allocation).
-fn format_size_into(bytes: u64, buf: &mut String) {
-    use std::fmt::Write;
-    buf.clear();
-    const KB: u64 = 1024;
-    const MB: u64 = 1024 * KB;
-    const GB: u64 = 1024 * MB;
-    if bytes >= GB {
-        let _ = write!(buf, "{:.1}G", bytes as f64 / GB as f64);
-    } else if bytes >= MB {
-        let _ = write!(buf, "{:.1}M", bytes as f64 / MB as f64);
-    } else if bytes >= KB {
-        let _ = write!(buf, "{}K", bytes / KB);
-    } else {
-        let _ = write!(buf, "{}B", bytes);
-    }
-}
-
-pub fn format_size(bytes: u64) -> String {
-    let mut buf = String::with_capacity(16);
-    format_size_into(bytes, &mut buf);
-    buf
-}
+// format_size and format_size_into now imported from utils module
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_format_size() {
-        assert_eq!(format_size(0), "0B");
-        assert_eq!(format_size(512), "512B");
-        assert_eq!(format_size(1024), "1K");
-        assert_eq!(format_size(1536), "1K");
-        assert_eq!(format_size(1048576), "1.0M");
-        assert_eq!(format_size(1073741824), "1.0G");
-    }
-
-    #[test]
     fn test_label_fg() {
         assert_eq!(label_fg(Color::Rgb(255, 255, 255)), Color::Black);
         assert_eq!(label_fg(Color::Rgb(0, 0, 0)), Color::White);
         assert_eq!(label_fg(Color::Red), Color::White);
-    }
-
-    #[test]
-    fn test_truncate_str_ascii() {
-        assert_eq!(truncate_str("hello", 3), "hel");
-        assert_eq!(truncate_str("hi", 10), "hi");
-        assert_eq!(truncate_str("", 5), "");
-    }
-
-    #[test]
-    fn test_truncate_str_unicode() {
-        // Multi-byte chars should not panic
-        assert_eq!(truncate_str("héllo", 3), "hél");
-        assert_eq!(truncate_str("你好世界", 2), "你好");
-        assert_eq!(truncate_str("🔥fire", 2), "🔥f");
     }
 }

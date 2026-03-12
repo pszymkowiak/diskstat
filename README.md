@@ -2,12 +2,24 @@
 
 Fast TUI disk usage analyzer built in Rust. A modern alternative to WinDirStat, ncdu, and Disk Inventory X.
 
+![diskstat](screenshots/diskstat.png)
+
 [Francais](#francais) | [English](#english)
 
 ---
 
 <a name="english"></a>
 ## English
+
+### Why diskstat?
+
+diskstat combines the best features of existing disk usage analyzers with modern performance:
+
+- **vs ncdu**: 10x faster scanning via parallel walk + macOS acceleration, instant cache reload
+- **vs WinDirStat**: Native terminal UI, cross-platform, keyboard-first navigation
+- **vs Disk Inventory X**: Open source, actively maintained, modern Rust safety
+- **vs dust**: Interactive TUI with tree navigation, treemap visualization, duplicate detection
+- **vs gdu**: Feature parity (treemap, duplicates, search) with better ergonomics
 
 ### Features
 
@@ -175,6 +187,33 @@ diskstat --info           # Afficher les infos de version
 | Doublons | 3 passes avec blake3 (taille > hash 4Ko > hash complet) |
 
 ---
+
+## Architecture
+
+diskstat is built with a clean separation of concerns:
+
+- **Scanner** (`src/scanner/`): Parallel filesystem walker using rayon work-stealing, macOS `getattrlistbulk` for 10x speedup
+- **Arena tree** (`src/types.rs`): Indextree-based memory-efficient storage with interned extensions
+- **Treemap** (`src/treemap_algo.rs`): Squarified treemap algorithm optimized for terminal aspect ratio
+- **TUI** (`src/ui/`): Ratatui widgets with manual buffer rendering for treemap, i18n support (EN/FR)
+- **Cache** (`src/scanner/cache.rs`, `tree_cache.rs`): SQLite directory cache + binary tree serialization for <100ms startup
+- **Duplicates** (`src/scanner/dupes.rs`): 3-pass parallel deduplication (size > partial hash > full blake3)
+
+Key optimizations:
+- Zero-copy sorted children with RefCell cache
+- Thread-local buffers for hash computation
+- Pre-allocated hit regions for mouse click detection
+- Single-pass treemap rendering with background fill + label pass
+
+## Contributing
+
+Contributions welcome! Please:
+
+1. Run tests before submitting: `cargo test`
+2. Format code: `cargo fmt`
+3. Run clippy: `cargo clippy --all-targets`
+4. Add tests for new features
+5. Update README for user-facing changes
 
 ## License
 

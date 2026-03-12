@@ -5,6 +5,7 @@ use std::sync::mpsc;
 use indextree::NodeId;
 use ratatui::style::Color;
 
+use crate::i18n::{Lang, Strings};
 use crate::types::{DuplicateGroup, ExtensionStats, FileTree, ScanProgress};
 use crate::ui::treemap::TreemapHit;
 
@@ -42,6 +43,10 @@ pub struct App {
     pub scan_state: ScanState,
     pub file_count: u64,
     pub total_size: u64,
+
+    // Internationalization
+    pub lang: Lang,
+    pub strings: &'static Strings,
 
     // UI state
     pub active_tab: ActiveTab,
@@ -145,12 +150,17 @@ impl TreeState {
 
 impl App {
     pub fn new(root_path: PathBuf) -> Self {
+        let lang = crate::i18n::Lang::detect();
+        let strings = crate::i18n::strings(lang);
+
         App {
             root_path,
             tree: None,
             scan_state: ScanState::Idle,
             file_count: 0,
             total_size: 0,
+            lang,
+            strings,
             active_tab: ActiveTab::TreeMap,
             active_pane: ActivePane::Tree,
             should_quit: false,

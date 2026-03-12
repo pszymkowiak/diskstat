@@ -7,13 +7,14 @@ use std::borrow::Cow;
 
 use crate::app::App;
 use crate::ui::style::UiStyle;
-use crate::ui::treemap::format_size;
+use crate::utils::format_size;
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
+    let title = format!(" {} ", app.strings.file_tree);
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(style.border_type)
-        .title(" File Tree ")
+        .title(title)
         .border_style(Style::default().fg(style.border_color));
 
     let inner = block.inner(area);
@@ -22,7 +23,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
     let tree = match &app.tree {
         Some(t) => t,
         None => {
-            let msg = Paragraph::new("Scanning...");
+            let msg = Paragraph::new(app.strings.scanning);
             f.render_widget(msg, inner);
             return;
         }
@@ -78,13 +79,13 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
         let pct = (entry.size as f64 / root_size * 100.0).min(100.0);
         let pct_str = format!("{:5.1}%", pct);
 
-        // Progress bar
-        let bar_width = 10;
-        let filled = ((pct / 100.0) * bar_width as f64) as usize;
+        // Progress bar (with bounds checking to prevent overflow)
+        let bar_width = 10usize;
+        let filled = ((pct / 100.0) * bar_width as f64).min(bar_width as f64) as usize;
         let bar: String = format!(
             "{}{}",
             style.bar_filled.repeat(filled),
-            style.bar_empty.repeat(bar_width - filled)
+            style.bar_empty.repeat(bar_width.saturating_sub(filled))
         );
 
         // Truncate name to fit (UTF-8 safe)

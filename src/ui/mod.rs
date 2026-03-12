@@ -38,7 +38,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     // Draw overlay dialogs
     if app.show_help {
-        dialogs::draw_help(f, &ui_style);
+        dialogs::draw_help(f, app, &ui_style);
     }
     if app.confirm_delete.is_some() {
         dialogs::draw_confirm_delete(f, app, &ui_style);

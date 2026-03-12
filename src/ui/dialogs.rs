@@ -7,8 +7,9 @@ use ratatui::Frame;
 
 use crate::app::App;
 use crate::ui::style::UiStyle;
+use crate::utils::format_size;
 
-pub fn draw_help(f: &mut Frame, style: &UiStyle) {
+pub fn draw_help(f: &mut Frame, app: &App, style: &UiStyle) {
     let area = centered_rect(60, 70, f.area());
     f.render_widget(Clear, area);
 
@@ -98,15 +99,16 @@ pub fn draw_help(f: &mut Frame, style: &UiStyle) {
         ]),
         Line::from(""),
         Line::from(Span::styled(
-            "  Press any key to close",
+            format!("  {}", app.strings.press_any_key),
             Style::default().fg(Color::DarkGray),
         )),
     ];
 
+    let title = format!(" {} ", app.strings.help_title);
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(style.border_type)
-        .title(" Help ")
+        .title(title)
         .border_style(Style::default().fg(style.fg_accent));
 
     let paragraph = Paragraph::new(help_text)
@@ -120,12 +122,12 @@ pub fn draw_confirm_delete(f: &mut Frame, app: &App, style: &UiStyle) {
         let area = centered_rect(50, 25, f.area());
         f.render_widget(Clear, area);
 
-        let size_str = crate::ui::treemap::format_size(*size);
+        let size_str = format_size(*size);
 
         let text = vec![
             Line::from(""),
             Line::from(Span::styled(
-                " Are you sure you want to delete? ",
+                format!(" {} ", app.strings.are_you_sure_delete),
                 Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             )),
             Line::from(""),
@@ -134,30 +136,31 @@ pub fn draw_confirm_delete(f: &mut Frame, app: &App, style: &UiStyle) {
                 Style::default().fg(Color::Yellow),
             )),
             Line::from(Span::styled(
-                format!(" Size: {} ", size_str),
+                format!(" {}: {} ", app.strings.size, size_str),
                 Style::default().fg(Color::Cyan),
             )),
             Line::from(""),
             Line::from(vec![
                 Span::styled(
-                    "  y ",
+                    format!("  {} ", app.strings.confirm_yes),
                     Style::default()
                         .fg(Color::Green)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::raw("Confirm   "),
+                Span::raw(format!("{}   ", app.strings.confirm)),
                 Span::styled(
-                    "  n ",
+                    format!("  {} ", app.strings.confirm_no),
                     Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
                 ),
-                Span::raw("Cancel"),
+                Span::raw(app.strings.cancel),
             ]),
         ];
 
+        let title = format!(" {} ", app.strings.confirm_delete);
         let block = Block::default()
             .borders(Borders::ALL)
             .border_type(style.border_type)
-            .title(" Confirm Delete ")
+            .title(title)
             .border_style(Style::default().fg(Color::Red));
 
         let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: false });
@@ -166,14 +169,15 @@ pub fn draw_confirm_delete(f: &mut Frame, app: &App, style: &UiStyle) {
 }
 
 pub fn draw_duplicates(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
+    let title = format!(" {} ", app.strings.duplicates);
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(style.border_type)
-        .title(" Duplicates ")
+        .title(title)
         .border_style(Style::default().fg(style.border_color));
 
     if app.dupes_scanning {
-        let text = Paragraph::new("Scanning for duplicates...").block(block);
+        let text = Paragraph::new(app.strings.scanning_duplicates).block(block);
         f.render_widget(text, area);
         return;
     }
@@ -181,7 +185,7 @@ pub fn draw_duplicates(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
     if app.duplicates.is_empty() {
         let text = Paragraph::new(vec![
             Line::from(""),
-            Line::from("  No duplicates found. Press 's' to scan for duplicates."),
+            Line::from(format!("  {}", app.strings.no_duplicates_press_s)),
         ])
         .block(block);
         f.render_widget(text, area);
@@ -190,9 +194,11 @@ pub fn draw_duplicates(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
 
     let total_wasted: u64 = app.duplicates.iter().map(|d| d.wasted_size()).sum();
     let title = format!(
-        " Duplicates - {} groups, {} wasted ",
-        app.duplicates.len(),
-        ByteSize(total_wasted)
+        " {} ",
+        app.strings
+            .duplicate_groups_wasted
+            .replace("{}", &app.duplicates.len().to_string())
+            .replace("{}", &format!("{}", ByteSize(total_wasted)))
     );
 
     let block = block.title(title);

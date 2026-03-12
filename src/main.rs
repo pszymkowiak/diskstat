@@ -1,10 +1,12 @@
 #![allow(dead_code)]
 mod actions;
 mod app;
+mod i18n;
 mod scanner;
 mod treemap_algo;
 mod types;
 mod ui;
+mod utils;
 
 use std::env;
 use std::io;
@@ -135,7 +137,7 @@ fn run_app(
         app.tree = Some(tree);
         app.scan_state = ScanState::Done;
         app.on_scan_complete();
-        app.status_message = Some("Loaded from cache (r to rescan)".to_string());
+        app.status_message = Some(app.strings.loaded_from_cache.to_string());
         None
     } else {
         let elapsed = start.elapsed();
@@ -199,13 +201,13 @@ fn run_app(
                         if let Some(ref d) = dlog {
                             d.log("scan_failed", "scan_directory returned None");
                         }
-                        app.status_message = Some("Scan failed".to_string());
+                        app.status_message = Some(app.strings.scan_failed.to_string());
                     }
                     Err(_) => {
                         if let Some(ref d) = dlog {
                             d.log("scan_panic", "scan thread panicked");
                         }
-                        app.status_message = Some("Scan thread panicked".to_string());
+                        app.status_message = Some(app.strings.scan_thread_panicked.to_string());
                     }
                 }
             }

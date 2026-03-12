@@ -11,10 +11,11 @@ use crate::ui::style::UiStyle;
 
 /// Draw the full extensions tab view.
 pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
+    let title = format!(" {} ", app.strings.extensions);
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(style.border_type)
-        .title(" Extensions ")
+        .title(title)
         .border_style(Style::default().fg(style.border_color));
 
     let total_size = app.total_size.max(1) as f64;
@@ -76,10 +77,11 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
 
 /// Draw a compact extension summary for the bottom panel in Tree+Map view.
 pub fn draw_summary(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
+    let title = format!(" {} ", app.strings.extensions);
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(style.border_type)
-        .title(" Extensions ")
+        .title(title)
         .border_style(Style::default().fg(style.border_color));
 
     let inner = block.inner(area);
