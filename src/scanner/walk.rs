@@ -419,7 +419,10 @@ fn read_dir_bulk_macos(path: &Path) -> Result<Vec<DirChild>, std::io::Error> {
                 break;
             }
 
-            let length = read_u32(&buffer, offset) as usize;
+            let length = match read_u32(&buffer, offset) {
+                Some(l) => l as usize,
+                None => break,
+            };
             if length == 0 || offset + length > buf_size {
                 break;
             }
@@ -430,7 +433,13 @@ fn read_dir_bulk_macos(path: &Path) -> Result<Vec<DirChild>, std::io::Error> {
                 offset = record_end;
                 continue;
             }
-            let returned_file = read_u32(&buffer, offset + 12);
+            let returned_file = match read_u32(&buffer, offset + 12) {
+                Some(rf) => rf,
+                None => {
+                    offset = record_end;
+                    continue;
+                }
+            };
             offset += 20;
 
             if offset + 8 > record_end {
@@ -438,22 +447,47 @@ fn read_dir_bulk_macos(path: &Path) -> Result<Vec<DirChild>, std::io::Error> {
                 continue;
             }
             let name_ref_start = offset;
-            let name_data_off = read_i32(&buffer, offset);
-            let name_len = read_u32(&buffer, offset + 4) as usize;
+            let name_data_off = match read_i32(&buffer, offset) {
+                Some(off) => off,
+                None => {
+                    offset = record_end;
+                    continue;
+                }
+            };
+            let name_len = match read_u32(&buffer, offset + 4) {
+                Some(len) => len as usize,
+                None => {
+                    offset = record_end;
+                    continue;
+                }
+            };
             offset += 8;
 
             if offset + 4 > record_end {
                 offset = record_end;
                 continue;
             }
-            let obj_type = read_u32(&buffer, offset);
+            let obj_type = match read_u32(&buffer, offset) {
+                Some(ot) => ot,
+                None => {
+                    offset = record_end;
+                    continue;
+                }
+            };
             offset += 4;
 
             // ATTR_CMN_MODTIME is a struct timespec (16 bytes: i64 sec + i64 nsec)
             let mtime = if offset + 16 <= record_end {
-                let sec = read_i64(&buffer, offset);
-                offset += 16; // skip both sec and nsec
-                sec.max(0) as u64
+                match read_i64(&buffer, offset) {
+                    Some(sec) => {
+                        offset += 16; // skip both sec and nsec
+                        sec.max(0) as u64
+                    }
+                    None => {
+                        offset = record_end;
+                        0
+                    }
+                }
             } else {
                 offset = record_end;
                 0
@@ -461,7 +495,10 @@ fn read_dir_bulk_macos(path: &Path) -> Result<Vec<DirChild>, std::io::Error> {
 
             let size = if returned_file & ATTR_FILE_ALLOCSIZE != 0 {
                 if offset + 8 <= record_end {
-                    read_i64(&buffer, offset).max(0) as u64
+                    match read_i64(&buffer, offset) {
+                        Some(s) => s.max(0) as u64,
+                        None => 0,
+                    }
                 } else {
                     0
                 }
@@ -512,20 +549,23 @@ fn read_dir_bulk_macos(path: &Path) -> Result<Vec<DirChild>, std::io::Error> {
 
 #[cfg(target_os = "macos")]
 #[inline]
-fn read_u32(buf: &[u8], off: usize) -> u32 {
-    u32::from_ne_bytes(buf[off..off + 4].try_into().unwrap())
+fn read_u32(buf: &[u8], off: usize) -> Option<u32> {
+    let bytes: [u8; 4] = buf.get(off..off + 4)?.try_into().ok()?;
+    Some(u32::from_ne_bytes(bytes))
 }
 
 #[cfg(target_os = "macos")]
 #[inline]
-fn read_i32(buf: &[u8], off: usize) -> i32 {
-    i32::from_ne_bytes(buf[off..off + 4].try_into().unwrap())
+fn read_i32(buf: &[u8], off: usize) -> Option<i32> {
+    let bytes: [u8; 4] = buf.get(off..off + 4)?.try_into().ok()?;
+    Some(i32::from_ne_bytes(bytes))
 }
 
 #[cfg(target_os = "macos")]
 #[inline]
-fn read_i64(buf: &[u8], off: usize) -> i64 {
-    i64::from_ne_bytes(buf[off..off + 8].try_into().unwrap())
+fn read_i64(buf: &[u8], off: usize) -> Option<i64> {
+    let bytes: [u8; 8] = buf.get(off..off + 8)?.try_into().ok()?;
+    Some(i64::from_ne_bytes(bytes))
 }
 
 #[cfg(test)]

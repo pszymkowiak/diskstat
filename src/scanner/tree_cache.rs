@@ -79,6 +79,10 @@ pub fn load_tree(root_path: &Path) -> Option<FileTree> {
     }
 
     let path_len = read_u32(&mut r).ok()? as usize;
+    // Security: validate path length to prevent excessive allocation
+    if path_len > 4096 {
+        return None;
+    }
     let mut path_buf = vec![0u8; path_len];
     r.read_exact(&mut path_buf).ok()?;
     let stored_root = String::from_utf8_lossy(&path_buf);
@@ -87,7 +91,8 @@ pub fn load_tree(root_path: &Path) -> Option<FileTree> {
     }
 
     let node_count = read_u32(&mut r).ok()? as usize;
-    if node_count == 0 {
+    // Security: validate node count to prevent OOM (max 100M nodes = ~10GB+ RAM)
+    if node_count == 0 || node_count > 100_000_000 {
         return None;
     }
 
@@ -99,6 +104,10 @@ pub fn load_tree(root_path: &Path) -> Option<FileTree> {
         let parent_idx = read_i32(&mut r).ok()?;
 
         let name_len = read_u16(&mut r).ok()? as usize;
+        // Security: validate name length to prevent excessive allocation
+        if name_len > 1024 {
+            return None;
+        }
         let mut name_buf = vec![0u8; name_len];
         r.read_exact(&mut name_buf).ok()?;
         let name = String::from_utf8(name_buf).unwrap_or_default();
@@ -112,6 +121,10 @@ pub fn load_tree(root_path: &Path) -> Option<FileTree> {
 
         let ext_len = read_u16(&mut r).ok()? as usize;
         let extension = if ext_len > 0 {
+            // Security: validate extension length to prevent excessive allocation
+            if ext_len > 256 {
+                return None;
+            }
             let mut ext_buf = vec![0u8; ext_len];
             r.read_exact(&mut ext_buf).ok()?;
             let ext_string = String::from_utf8(ext_buf).unwrap_or_default();
