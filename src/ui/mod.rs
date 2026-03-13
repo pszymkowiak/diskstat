@@ -83,18 +83,19 @@ fn draw_tree_map_tab(
             .direction(Direction::Horizontal)
             .constraints([
                 Constraint::Percentage(app.split_pct),
+                Constraint::Length(1), // 1-column gap between panels
                 Constraint::Percentage(100 - app.split_pct),
             ])
             .split(vert_chunks[0]);
 
-        // Store separator x for mouse hit detection
-        app.last_split_x = horiz_chunks[0].x + horiz_chunks[0].width;
+        // Store separator x for mouse hit detection (middle of gap)
+        app.last_split_x = horiz_chunks[1].x;
 
         let tree_height = horiz_chunks[0].height.saturating_sub(2) as usize;
         app.ensure_visible(tree_height);
 
         file_tree::draw(f, app, horiz_chunks[0], ui_style);
-        let hits = treemap::draw(f, app, horiz_chunks[1], ui_style);
+        let hits = treemap::draw(f, app, horiz_chunks[2], ui_style);
         app.treemap_hits = hits;
     } else {
         // Treemap hidden: tree takes full width
