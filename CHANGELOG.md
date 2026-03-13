@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/pszymkowiak/diskstat/compare/v0.8.0...v0.8.1) (2026-03-13)
+
+
+### Bug Fixes
+
+* make subtree rescan non-blocking (async thread) ([#15](https://github.com/pszymkowiak/diskstat/issues/15)) ([5aea80a](https://github.com/pszymkowiak/diskstat/commit/5aea80abbf494ca19829e3a7f6f916a9c7ea29c3))
+
 ## [0.8.0](https://github.com/pszymkowiak/diskstat/compare/v0.7.0...v0.8.0) (2026-03-13)
 
 
