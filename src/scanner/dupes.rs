@@ -118,12 +118,18 @@ fn full_hash(path: &PathBuf) -> Option<String> {
         let mut buf = buf_cell.borrow_mut();
         let mut file = File::open(path).ok()?;
         let mut hasher = blake3::Hasher::new();
+        let mut chunks = 0u32;
         loop {
             let n = file.read(&mut buf).ok()?;
             if n == 0 {
                 break;
             }
             hasher.update(&buf[..n]);
+            chunks += 1;
+            // Yield every 16 chunks (~1MB) to avoid saturating CPU
+            if chunks.is_multiple_of(16) {
+                std::thread::yield_now();
+            }
         }
         Some(hasher.finalize().to_hex().to_string())
     })

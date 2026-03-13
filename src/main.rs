@@ -209,6 +209,23 @@ fn run_app(
                             ""
                         ));
                         app.needs_redraw = true;
+
+                        // Save duplicates to cache for instant reload next time
+                        if let Some(ref tree) = app.tree {
+                            if let Some(tree_mtime) = tree.tree_mtime() {
+                                let _ = scanner::cache::save_duplicates(
+                                    &tree.root_path,
+                                    &app.duplicates,
+                                    tree_mtime,
+                                );
+                                if let Some(ref d) = dlog {
+                                    d.log_json(
+                                        "duplicates_cache_saved",
+                                        &[("count", &app.duplicates.len().to_string())],
+                                    );
+                                }
+                            }
+                        }
                     }
                     Err(_) => {
                         app.dupes_state = DupeState::Idle;
@@ -299,6 +316,40 @@ fn run_app(
                         app.tree = Some(tree);
                         app.on_scan_complete();
                         app.needs_redraw = true;
+
+                        // Auto-launch duplicate scan in background
+                        if let Some(ref tree) = app.tree {
+                            // Try to load cached duplicates first
+                            let tree_mtime =
+                                tree.tree_mtime().unwrap_or(std::time::SystemTime::now());
+                            if let Some(cached_dupes) =
+                                scanner::cache::load_duplicates(&tree.root_path, tree_mtime)
+                            {
+                                if let Some(ref d) = dlog {
+                                    d.log_json(
+                                        "duplicates_cache_hit",
+                                        &[("count", &cached_dupes.len().to_string())],
+                                    );
+                                }
+                                app.duplicates = cached_dupes;
+                                app.dupes_state = DupeState::Done;
+                            } else {
+                                // No cache or invalid, start background scan
+                                if let Some(ref d) = dlog {
+                                    d.log_json("duplicate_scan_auto_start", &[]);
+                                }
+                                app.dupes_state = DupeState::Scanning;
+                                let snapshot = scanner::dupes::FileSnapshot::from_tree(tree);
+                                dupe_handle = Some(std::thread::spawn(move || {
+                                    // Lower thread priority to avoid saturating CPU
+                                    #[cfg(unix)]
+                                    unsafe {
+                                        libc::nice(10); // Lower priority by 10 (higher = lower priority)
+                                    }
+                                    scanner::dupes::find_duplicates_from_snapshot(&snapshot)
+                                }));
+                            }
+                        }
                     }
                     Ok(None) => {
                         if let Some(ref d) = dlog {
@@ -438,6 +489,11 @@ fn run_app(
                                 // Create a thread-safe snapshot for the background thread
                                 let snapshot = scanner::dupes::FileSnapshot::from_tree(tree);
                                 dupe_handle = Some(std::thread::spawn(move || {
+                                    // Lower thread priority to avoid saturating CPU
+                                    #[cfg(unix)]
+                                    unsafe {
+                                        libc::nice(10); // Lower priority by 10 (higher = lower priority)
+                                    }
                                     scanner::dupes::find_duplicates_from_snapshot(&snapshot)
                                 }));
                             }

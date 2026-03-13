@@ -5,6 +5,7 @@ use std::time::SystemTime;
 use rusqlite::{params, Connection};
 
 use super::walk::DirChild;
+use crate::types::DuplicateGroup;
 
 /// In-memory cache entry for a directory.
 struct CachedDir {
@@ -216,4 +217,153 @@ fn dirs_cache() -> PathBuf {
     } else {
         PathBuf::from("/tmp")
     }
+}
+
+/// Load cached duplicates for a given root path.
+/// Returns Some(duplicates) if cache is valid, None if no cache or tree changed.
+pub fn load_duplicates(root: &Path, tree_mtime: SystemTime) -> Option<Vec<DuplicateGroup>> {
+    let cache_dir = dirs_cache().join("diskstat");
+    let hash = blake3::hash(root.to_string_lossy().as_bytes());
+    let db_name = format!("{}.db", &hash.to_hex()[..16]);
+    let db_path = cache_dir.join(&db_name);
+
+    if !db_path.exists() {
+        return None;
+    }
+
+    let conn = Connection::open(&db_path).ok()?;
+
+    // Check if duplicates table exists
+    let table_exists: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='duplicates'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .unwrap_or(0)
+        > 0;
+
+    if !table_exists {
+        return None;
+    }
+
+    // Check tree_mtime in metadata table
+    let cached_mtime: Option<i64> = conn
+        .query_row(
+            "SELECT value FROM metadata WHERE key='tree_mtime'",
+            [],
+            |row| row.get(0),
+        )
+        .ok();
+
+    let tree_mtime_secs = tree_mtime
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .ok()?
+        .as_secs() as i64;
+
+    if cached_mtime != Some(tree_mtime_secs) {
+        return None;
+    }
+
+    // Load duplicates
+    let mut stmt = conn
+        .prepare("SELECT hash, size, paths FROM duplicates ORDER BY size DESC")
+        .ok()?;
+    let rows = stmt
+        .query_map([], |row| {
+            let hash: String = row.get(0)?;
+            let size: i64 = row.get(1)?;
+            let paths_str: String = row.get(2)?;
+            let paths: Vec<PathBuf> = paths_str
+                .split('\n')
+                .filter(|s| !s.is_empty())
+                .map(PathBuf::from)
+                .collect();
+            Ok(DuplicateGroup {
+                hash,
+                size: size as u64,
+                paths,
+            })
+        })
+        .ok()?;
+
+    let duplicates: Vec<DuplicateGroup> = rows.flatten().collect();
+    if duplicates.is_empty() {
+        None
+    } else {
+        Some(duplicates)
+    }
+}
+
+/// Save duplicates to cache for a given root path.
+pub fn save_duplicates(
+    root: &Path,
+    duplicates: &[DuplicateGroup],
+    tree_mtime: SystemTime,
+) -> Result<(), rusqlite::Error> {
+    let cache_dir = dirs_cache().join("diskstat");
+    let _ = std::fs::create_dir_all(&cache_dir);
+
+    let hash = blake3::hash(root.to_string_lossy().as_bytes());
+    let db_name = format!("{}.db", &hash.to_hex()[..16]);
+    let db_path = cache_dir.join(&db_name);
+
+    let conn = Connection::open(&db_path)?;
+    conn.execute_batch(
+        "PRAGMA journal_mode=WAL;
+         PRAGMA synchronous=NORMAL;",
+    )?;
+
+    // Create metadata table if needed
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS metadata (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )",
+        [],
+    )?;
+
+    // Create duplicates table
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS duplicates (
+            hash TEXT PRIMARY KEY,
+            size INTEGER NOT NULL,
+            paths TEXT NOT NULL
+        )",
+        [],
+    )?;
+
+    conn.execute_batch("BEGIN")?;
+
+    // Store tree_mtime
+    let tree_mtime_secs = tree_mtime
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_err(|_| rusqlite::Error::InvalidQuery)?
+        .as_secs() as i64;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO metadata (key, value) VALUES ('tree_mtime', ?1)",
+        params![tree_mtime_secs],
+    )?;
+
+    // Clear old duplicates
+    conn.execute("DELETE FROM duplicates", [])?;
+
+    // Insert new duplicates
+    let mut stmt =
+        conn.prepare("INSERT INTO duplicates (hash, size, paths) VALUES (?1, ?2, ?3)")?;
+    for dupe in duplicates {
+        let paths_str = dupe
+            .paths
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        stmt.execute(params![&dupe.hash, dupe.size as i64, paths_str])?;
+    }
+
+    drop(stmt);
+    conn.execute_batch("COMMIT")?;
+
+    Ok(())
 }

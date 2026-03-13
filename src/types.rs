@@ -163,6 +163,11 @@ impl FileTree {
         }
         path
     }
+
+    /// Get the modification time of the root path (used for cache validation).
+    pub fn tree_mtime(&self) -> Option<std::time::SystemTime> {
+        std::fs::metadata(&self.root_path).ok()?.modified().ok()
+    }
 }
 
 /// A single entry in the file tree (file or directory).
