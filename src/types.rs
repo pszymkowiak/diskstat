@@ -164,6 +164,41 @@ impl FileTree {
         path
     }
 
+    /// Remove a node from the tree and recompute parent sizes up to root.
+    /// Returns the parent NodeId if it exists.
+    pub fn remove_node(&mut self, node_id: NodeId) -> Option<NodeId> {
+        if node_id == self.root {
+            return None; // Never remove root
+        }
+        let parent = self.arena[node_id].parent();
+        let removed_size = self.arena[node_id].get().size;
+        let removed_count = if self.arena[node_id].get().is_dir {
+            self.arena[node_id].get().file_count
+        } else {
+            1
+        };
+
+        // Detach and remove the subtree
+        node_id.detach(&mut self.arena);
+        // Mark all nodes in the subtree as removed
+        let to_remove: Vec<NodeId> = node_id.descendants(&self.arena).collect();
+        for nid in to_remove {
+            nid.remove(&mut self.arena);
+        }
+
+        // Walk up and subtract sizes
+        let mut current = parent;
+        while let Some(nid) = current {
+            let entry = self.arena[nid].get_mut();
+            entry.size = entry.size.saturating_sub(removed_size);
+            entry.file_count = entry.file_count.saturating_sub(removed_count);
+            current = self.arena[nid].parent();
+        }
+
+        self.invalidate_sort_cache();
+        parent
+    }
+
     /// Get the modification time of the root path (used for cache validation).
     pub fn tree_mtime(&self) -> Option<std::time::SystemTime> {
         std::fs::metadata(&self.root_path).ok()?.modified().ok()

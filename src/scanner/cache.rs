@@ -193,6 +193,17 @@ impl ScanCache {
         Ok(())
     }
 
+    /// Invalidate a single directory in the cache.
+    pub fn invalidate_dir(&mut self, dir_path: &Path) -> Result<(), rusqlite::Error> {
+        let key = dir_path.to_string_lossy().to_string();
+        self.index.remove(&key);
+        self.pending_writes.retain(|(p, _, _, _)| p != &key);
+        let conn = Connection::open(&self.db_path)?;
+        conn.execute("DELETE FROM entries WHERE dir_path = ?1", [&key])?;
+        conn.execute("DELETE FROM dirs WHERE path = ?1", [&key])?;
+        Ok(())
+    }
+
     /// Invalidate the entire cache (forced rescan).
     pub fn invalidate_all(&mut self) -> Result<(), rusqlite::Error> {
         self.index.clear();
