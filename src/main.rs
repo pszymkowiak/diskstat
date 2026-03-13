@@ -138,7 +138,7 @@ fn run_app(
     };
     let mut dupe_handle: Option<std::thread::JoinHandle<Vec<DuplicateGroup>>> = None;
     let mut delete_handle: Option<std::thread::JoinHandle<Result<(), String>>> = None;
-    let mut delete_path_pending: Option<(PathBuf, indextree::NodeId)> = None;
+    let mut delete_path_pending: Option<(PathBuf, Option<indextree::NodeId>)> = None;
 
     let mut scan_handle = if let Some(tree) = cached_tree {
         let elapsed = start.elapsed();
@@ -249,46 +249,52 @@ fn run_app(
                             app.status_message =
                                 Some(format!("{}: {}", app.strings.deleted, path.display()));
 
-                            // Remove node from in-memory tree and recompute sizes
-                            // (no full rescan needed)
-                            if let Some(tree) = &mut app.tree {
-                                let parent = tree.remove_node(node_id);
+                            // Check if this was a duplicate file (indicated by node_id == None)
+                            // or a tree node deletion
+                            if node_id.is_none() {
+                                // Duplicate file deletion - remove from duplicates list
+                                app.remove_duplicate_file(&path);
+                            } else if let Some(node_id) = node_id {
+                                // Tree node deletion - remove from in-memory tree and recompute sizes
+                                if let Some(tree) = &mut app.tree {
+                                    let parent = tree.remove_node(node_id);
 
-                                // Invalidate only the parent dir in SQLite cache
-                                if let Some(parent_id) = parent {
-                                    let parent_path = tree.full_path(parent_id);
-                                    if let Ok(mut cache) =
-                                        scanner::cache::ScanCache::open(&app.root_path)
-                                    {
-                                        let _ = cache.invalidate_dir(&parent_path);
+                                    // Invalidate only the parent dir in SQLite cache
+                                    if let Some(parent_id) = parent {
+                                        let parent_path = tree.full_path(parent_id);
+                                        if let Ok(mut cache) =
+                                            scanner::cache::ScanCache::open(&app.root_path)
+                                        {
+                                            let _ = cache.invalidate_dir(&parent_path);
+                                        }
+                                    }
+
+                                    // Update binary tree cache with new state
+                                    let _ = scanner::tree_cache::save_tree(tree);
+                                }
+
+                                // Update stats and UI state
+                                if let Some(tree) = &app.tree {
+                                    let root = tree.root;
+                                    let root_entry = tree.arena[root].get();
+                                    app.file_count = root_entry.file_count;
+                                    app.total_size = root_entry.size;
+                                    app.ext_stats =
+                                        crate::scanner::tree::compute_extension_stats(tree);
+                                    app.ext_color_map =
+                                        crate::scanner::tree::extension_color_map(&app.ext_stats);
+                                }
+
+                                // Move selection to parent if the deleted node was selected
+                                if app.tree_state.selected == Some(node_id) {
+                                    if let Some(tree) = &app.tree {
+                                        app.tree_state.selected = Some(tree.root);
                                     }
                                 }
-
-                                // Update binary tree cache with new state
-                                let _ = scanner::tree_cache::save_tree(tree);
+                                app.tree_state.expanded.remove(&node_id);
+                                app.rebuild_visible_nodes();
                             }
 
-                            // Update stats and UI state
-                            if let Some(tree) = &app.tree {
-                                let root = tree.root;
-                                let root_entry = tree.arena[root].get();
-                                app.file_count = root_entry.file_count;
-                                app.total_size = root_entry.size;
-                                app.ext_stats =
-                                    crate::scanner::tree::compute_extension_stats(tree);
-                                app.ext_color_map =
-                                    crate::scanner::tree::extension_color_map(&app.ext_stats);
-                            }
-
-                            // Move selection to parent if the deleted node was selected
-                            if app.tree_state.selected == Some(node_id) {
-                                if let Some(tree) = &app.tree {
-                                    app.tree_state.selected =
-                                        Some(tree.root);
-                                }
-                            }
-                            app.tree_state.expanded.remove(&node_id);
-                            app.rebuild_visible_nodes();
                             app.update_disk_space();
                         }
                         app.needs_redraw = true;
@@ -587,8 +593,8 @@ fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputA
     if app.confirm_delete.is_some() {
         match code {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
-                if let Some((path, _size, node_id)) = app.confirm_delete.take() {
-                    return InputAction::StartDelete(path, node_id);
+                if let Some((path, _size, node_id_opt)) = app.confirm_delete.take() {
+                    return InputAction::StartDelete(path, node_id_opt);
                 }
             }
             _ => {
@@ -640,11 +646,7 @@ fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputA
                     app.ext_selected_index -= 1;
                 }
             }
-            ActiveTab::Duplicates => {
-                if app.dupes_selected_index > 0 {
-                    app.dupes_selected_index -= 1;
-                }
-            }
+            ActiveTab::Duplicates => app.dupes_prev_file(),
         },
         KeyCode::Down | KeyCode::Char('j') => match app.active_tab {
             ActiveTab::TreeMap => app.tree_down(),
@@ -653,12 +655,18 @@ fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputA
                     app.ext_selected_index += 1;
                 }
             }
-            ActiveTab::Duplicates => {
-                if app.dupes_selected_index + 1 < app.duplicates.len() {
-                    app.dupes_selected_index += 1;
-                }
-            }
+            ActiveTab::Duplicates => app.dupes_next_file(),
         },
+        KeyCode::PageUp => {
+            if app.active_tab == ActiveTab::Duplicates {
+                app.dupes_prev_group();
+            }
+        }
+        KeyCode::PageDown => {
+            if app.active_tab == ActiveTab::Duplicates {
+                app.dupes_next_group();
+            }
+        }
         KeyCode::Left | KeyCode::Char('h') => app.tree_collapse(),
         KeyCode::Right | KeyCode::Char('l') => app.tree_expand(),
 
@@ -668,17 +676,32 @@ fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputA
 
         // Actions
         KeyCode::Char('d') | KeyCode::Delete => {
-            if let Some(selected) = app.tree_state.selected {
+            if app.active_tab == ActiveTab::Duplicates {
+                // Delete selected duplicate file
+                if let Some(path) = app.get_selected_duplicate_path() {
+                    if let Ok(metadata) = std::fs::metadata(&path) {
+                        let size = metadata.len();
+                        // Use None node_id to indicate duplicate file deletion
+                        app.confirm_delete = Some((path, size, None));
+                    }
+                }
+            } else if let Some(selected) = app.tree_state.selected {
                 if let Some(tree) = &app.tree {
                     let size = tree.arena[selected].get().size;
                     if let Some(path) = app.selected_path() {
-                        app.confirm_delete = Some((path, size, selected));
+                        app.confirm_delete = Some((path, size, Some(selected)));
                     }
                 }
             }
         }
         KeyCode::Char('o') => {
-            if let Some(path) = app.selected_path() {
+            let path_to_open = if app.active_tab == ActiveTab::Duplicates {
+                app.get_selected_duplicate_path()
+            } else {
+                app.selected_path()
+            };
+
+            if let Some(path) = path_to_open {
                 match actions::open_in_finder(&path) {
                     Ok(()) => app.status_message = Some(format!("Opened: {}", path.display())),
                     Err(e) => app.status_message = Some(e),
@@ -686,7 +709,13 @@ fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputA
             }
         }
         KeyCode::Char('c') => {
-            if let Some(path) = app.selected_path() {
+            let path_to_copy = if app.active_tab == ActiveTab::Duplicates {
+                app.get_selected_duplicate_path()
+            } else {
+                app.selected_path()
+            };
+
+            if let Some(path) = path_to_copy {
                 match actions::copy_to_clipboard(&path) {
                     Ok(()) => app.status_message = Some("Path copied to clipboard".to_string()),
                     Err(e) => app.status_message = Some(e),
@@ -1120,7 +1149,7 @@ enum InputAction {
     ForceRescan(PathBuf),
     SubtreeRescan(indextree::NodeId, PathBuf),
     StartDuplicateScan,
-    StartDelete(PathBuf, indextree::NodeId),
+    StartDelete(PathBuf, Option<indextree::NodeId>),
 }
 
 /// Hit-test the file tree panel to determine which node was clicked.

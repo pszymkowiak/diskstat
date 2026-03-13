@@ -31,7 +31,7 @@ pub fn draw_help(f: &mut Frame, app: &App, style: &UiStyle) {
         ]),
         Line::from(vec![
             Span::styled("  1 / 2 / 3   ", Style::default().fg(style.fg_accent)),
-            Span::raw("Switch tabs"),
+            Span::raw("Switch tabs (Tree/Extensions/Duplicates)"),
         ]),
         Line::from(vec![
             Span::styled("  Tab         ", Style::default().fg(style.fg_accent)),
@@ -102,6 +102,10 @@ pub fn draw_help(f: &mut Frame, app: &App, style: &UiStyle) {
             Span::raw("Clear size filter"),
         ]),
         Line::from(vec![
+            Span::styled("  PgUp/PgDn   ", Style::default().fg(style.fg_accent)),
+            Span::raw("Navigate duplicate groups"),
+        ]),
+        Line::from(vec![
             Span::styled("  ?           ", Style::default().fg(style.fg_accent)),
             Span::raw("Toggle this help"),
         ]),
@@ -112,7 +116,11 @@ pub fn draw_help(f: &mut Frame, app: &App, style: &UiStyle) {
         )),
     ];
 
-    let title = format!(" {} ", app.strings.help_title);
+    let title = format!(
+        " {} — diskstat v{} ",
+        app.strings.help_title,
+        env!("CARGO_PKG_VERSION")
+    );
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(style.border_type)
@@ -194,6 +202,11 @@ pub fn draw_duplicates(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
         let text = Paragraph::new(vec![
             Line::from(""),
             Line::from(format!("  {}", app.strings.no_duplicates_press_s)),
+            Line::from(""),
+            Line::from(Span::styled(
+                "  Keys: d/Del=delete, o=open, c=copy path, Up/Down=navigate files, PgUp/PgDn=navigate groups",
+                Style::default().fg(Color::DarkGray),
+            )),
         ])
         .block(block);
         f.render_widget(text, area);
@@ -201,58 +214,121 @@ pub fn draw_duplicates(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
     }
 
     let total_wasted: u64 = app.duplicates.iter().map(|d| d.wasted_size()).sum();
-    let title = format!(
-        " {} ",
-        app.strings
-            .duplicate_groups_wasted
-            .replace("{}", &app.duplicates.len().to_string())
-            .replace("{}", &format!("{}", ByteSize(total_wasted)))
-    );
+    let total_files: usize = app.duplicates.iter().map(|d| d.paths.len()).sum();
+
+    // Fix: use replacen instead of chained replace to correctly substitute both placeholders
+    let title_str = app
+        .strings
+        .duplicate_groups_wasted
+        .replacen("{}", &app.duplicates.len().to_string(), 1)
+        .replacen("{}", &format!("{}", ByteSize(total_wasted)), 1);
+
+    let title = format!(" {} ({} files) ", title_str, total_files);
 
     let block = block.title(title);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
     let mut lines: Vec<Line> = Vec::new();
+    let mut line_to_group_file: Vec<(usize, Option<usize>)> = Vec::new(); // Track (group_idx, file_idx) for each line
 
-    for (i, group) in app.duplicates.iter().enumerate() {
-        let is_selected = i == app.dupes_selected_index;
-        let header_style = if is_selected {
-            Style::default()
-                .fg(style.selected_fg)
-                .bg(style.selected_bg)
-                .add_modifier(Modifier::BOLD)
-        } else {
+    for (group_idx, group) in app.duplicates.iter().enumerate() {
+        let is_group_selected = group_idx == app.dupes_selected_index;
+        let header_style = if is_group_selected {
             Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD)
         };
 
-        lines.push(Line::from(Span::styled(
-            format!(
-                "  {} x {} (wasted: {})",
-                group.paths.len(),
-                ByteSize(group.size),
-                ByteSize(group.wasted_size())
+        // Group header
+        lines.push(Line::from(vec![
+            Span::styled(
+                if is_group_selected { " ▶ " } else { "   " },
+                Style::default().fg(Color::Cyan),
             ),
-            header_style,
-        )));
+            Span::styled(
+                format!(
+                    "{} × {} = {} (wasted: {})",
+                    group.paths.len(),
+                    ByteSize(group.size),
+                    ByteSize(group.size * group.paths.len() as u64),
+                    ByteSize(group.wasted_size())
+                ),
+                header_style,
+            ),
+        ]));
+        line_to_group_file.push((group_idx, None));
 
-        for path in &group.paths {
-            lines.push(Line::from(Span::styled(
-                format!("    {}", path.display()),
-                Style::default().fg(Color::Gray),
-            )));
+        // Files in group
+        for (file_idx, path) in group.paths.iter().enumerate() {
+            let is_file_selected = is_group_selected && file_idx == app.dupes_file_index;
+            let file_style = if is_file_selected {
+                Style::default().fg(style.selected_fg).bg(style.selected_bg)
+            } else if is_group_selected {
+                Style::default().fg(Color::White)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
+
+            let marker = if is_file_selected {
+                "  ● "
+            } else if is_group_selected {
+                "  ○ "
+            } else {
+                "    "
+            };
+
+            lines.push(Line::from(vec![
+                Span::styled(marker, file_style),
+                Span::styled(format!("{}", path.display()), file_style),
+            ]));
+            line_to_group_file.push((group_idx, Some(file_idx)));
         }
 
         lines.push(Line::from(""));
+        line_to_group_file.push((group_idx, None));
+    }
 
-        if lines.len() > inner.height as usize {
-            break;
+    // Apply scroll offset
+    let visible_height = inner.height as usize;
+    let total_lines = lines.len();
+
+    // Calculate which line the current selection is on
+    let mut selected_line = 0;
+    for (line_idx, (g_idx, f_idx)) in line_to_group_file.iter().enumerate() {
+        if *g_idx == app.dupes_selected_index {
+            if let Some(file_idx) = f_idx {
+                if *file_idx == app.dupes_file_index {
+                    selected_line = line_idx;
+                    break;
+                }
+            }
         }
     }
 
-    let paragraph = Paragraph::new(lines);
+    // Auto-scroll to keep selection visible
+    let mut scroll_offset = app.dupes_scroll_offset;
+    if selected_line < scroll_offset {
+        scroll_offset = selected_line;
+    } else if selected_line >= scroll_offset + visible_height {
+        scroll_offset = selected_line.saturating_sub(visible_height - 1);
+    }
+
+    let visible_lines = if total_lines > scroll_offset {
+        lines
+            .into_iter()
+            .skip(scroll_offset)
+            .take(visible_height)
+            .collect()
+    } else {
+        lines
+    };
+
+    let paragraph = Paragraph::new(visible_lines);
     f.render_widget(paragraph, inner);
 }
 

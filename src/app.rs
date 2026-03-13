@@ -112,6 +112,8 @@ pub struct App {
     // Duplicates
     pub duplicates: Vec<DuplicateGroup>,
     pub dupes_selected_index: usize,
+    pub dupes_file_index: usize, // Index of selected file within the selected group
+    pub dupes_scroll_offset: usize, // Scroll offset for duplicates view
     pub dupes_state: DupeState,
 
     // Progress channel
@@ -119,7 +121,7 @@ pub struct App {
 
     // Dialog state
     pub show_help: bool,
-    pub confirm_delete: Option<(PathBuf, u64, indextree::NodeId)>,
+    pub confirm_delete: Option<(PathBuf, u64, Option<indextree::NodeId>)>, // None node_id = duplicate file
     pub path_input: Option<PathInput>,
 
     // Status message
@@ -233,6 +235,8 @@ impl App {
             ext_selected_index: 0,
             duplicates: Vec::new(),
             dupes_selected_index: 0,
+            dupes_file_index: 0,
+            dupes_scroll_offset: 0,
             dupes_state: DupeState::Idle,
             progress_rx: None,
             show_help: false,
@@ -571,6 +575,80 @@ impl App {
         }
     }
 
+    /// Get the currently selected duplicate file path.
+    pub fn get_selected_duplicate_path(&self) -> Option<PathBuf> {
+        let group = self.duplicates.get(self.dupes_selected_index)?;
+        group.paths.get(self.dupes_file_index).cloned()
+    }
+
+    /// Navigate to next duplicate file in current group.
+    pub fn dupes_next_file(&mut self) {
+        if let Some(group) = self.duplicates.get(self.dupes_selected_index) {
+            if self.dupes_file_index + 1 < group.paths.len() {
+                self.dupes_file_index += 1;
+            }
+        }
+    }
+
+    /// Navigate to previous duplicate file in current group.
+    pub fn dupes_prev_file(&mut self) {
+        if self.dupes_file_index > 0 {
+            self.dupes_file_index -= 1;
+        }
+    }
+
+    /// Navigate to next duplicate group.
+    pub fn dupes_next_group(&mut self) {
+        if self.dupes_selected_index + 1 < self.duplicates.len() {
+            self.dupes_selected_index += 1;
+            self.dupes_file_index = 0; // Reset file index when changing group
+        }
+    }
+
+    /// Navigate to previous duplicate group.
+    pub fn dupes_prev_group(&mut self) {
+        if self.dupes_selected_index > 0 {
+            self.dupes_selected_index -= 1;
+            self.dupes_file_index = 0; // Reset file index when changing group
+        }
+    }
+
+    /// Remove a file from the duplicates list after deletion.
+    /// If the group becomes too small (< 2 files), remove the entire group.
+    pub fn remove_duplicate_file(&mut self, path: &std::path::Path) {
+        let mut group_to_remove = None;
+
+        for (group_idx, group) in self.duplicates.iter_mut().enumerate() {
+            if let Some(file_idx) = group.paths.iter().position(|p| p == path) {
+                group.paths.remove(file_idx);
+
+                // Adjust file_index if needed
+                if group_idx == self.dupes_selected_index
+                    && self.dupes_file_index >= group.paths.len()
+                    && !group.paths.is_empty()
+                {
+                    self.dupes_file_index = group.paths.len() - 1;
+                }
+
+                // Mark group for removal if < 2 files remain
+                if group.paths.len() < 2 {
+                    group_to_remove = Some(group_idx);
+                }
+                break;
+            }
+        }
+
+        // Remove the group if needed
+        if let Some(idx) = group_to_remove {
+            self.duplicates.remove(idx);
+            // Adjust selected_index if needed
+            if self.dupes_selected_index >= self.duplicates.len() && !self.duplicates.is_empty() {
+                self.dupes_selected_index = self.duplicates.len() - 1;
+            }
+            self.dupes_file_index = 0;
+        }
+    }
+
     /// Reset all state for a new scan of a different directory.
     pub fn reset_for_scan(&mut self, new_path: PathBuf) {
         self.root_path = new_path;
@@ -586,6 +664,8 @@ impl App {
         self.ext_selected_index = 0;
         self.duplicates.clear();
         self.dupes_selected_index = 0;
+        self.dupes_file_index = 0;
+        self.dupes_scroll_offset = 0;
         self.dupes_state = DupeState::Idle;
         self.progress_rx = None;
         self.status_message = None;
