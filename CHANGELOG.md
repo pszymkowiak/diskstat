@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.8.0](https://github.com/pszymkowiak/diskstat/compare/v0.7.0...v0.8.0) (2026-03-13)
+
+
+### Features
+
+* add 11 new languages (DE, ES, IT, PT, NL, PL, SV, RU, JA, ZH, KO) ([e2177c6](https://github.com/pszymkowiak/diskstat/commit/e2177c6e13722ba0f205c1f5746986fa9929b48a))
+* add animated spinners for duplicate scan and delete operations ([b93bbca](https://github.com/pszymkowiak/diskstat/commit/b93bbcaea6ac24a68765d80abba64d27e7fef48d))
+* add mouse click support for file tree navigation ([57e8706](https://github.com/pszymkowiak/diskstat/commit/57e87065145ff3c2e726e3f5ef76544056db7d1a))
+* auto-launch duplicate scan in background with SQLite cache ([2d4d587](https://github.com/pszymkowiak/diskstat/commit/2d4d5875f6104144ef9cb09e600021486eb21a16))
+* improve duplicates tab UX with file-level navigation and actions ([#14](https://github.com/pszymkowiak/diskstat/issues/14)) ([0fe1877](https://github.com/pszymkowiak/diskstat/commit/0fe1877d9746ddc5105e1f557c00d7235868c981))
+
+
+### Bug Fixes
+
+* force UI redraw during background operations (delete/scan/dupes) ([#12](https://github.com/pszymkowiak/diskstat/issues/12)) ([d7662a5](https://github.com/pszymkowiak/diskstat/commit/d7662a519215d0a3b3a3659d1e8393660f4f1cdd))
+* improve spacing between tree and treemap panels ([9dd17aa](https://github.com/pszymkowiak/diskstat/commit/9dd17aaa0efea6e4ab092b070d61b37ea1b04454))
+
 ## [0.7.0](https://github.com/pszymkowiak/diskstat/compare/v0.6.0...v0.7.0) (2026-03-12)
 
 
