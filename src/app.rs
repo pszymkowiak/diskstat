@@ -30,7 +30,7 @@ pub enum ActivePane {
     Map,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SortMode {
     SizeDesc,
     SizeAsc,
@@ -805,7 +805,7 @@ fn get_disk_space(path: &std::path::Path) -> Option<(u64, u64)> {
 
 /// Fast case-insensitive ASCII string search (avoids allocation).
 /// Falls back to full Unicode lowercase only if needle contains non-ASCII.
-/// Note: Can't use eq_ignore_ascii_case because we need substring search, not full match.
+/// Uses optimized ASCII search that short-circuits on first char mismatch.
 #[allow(clippy::all)]
 fn contains_ignore_case_ascii(haystack: &str, needle: &str) -> bool {
     if needle.is_empty() {
@@ -816,15 +816,28 @@ fn contains_ignore_case_ascii(haystack: &str, needle: &str) -> bool {
     }
 
     // Fast path: ASCII-only search (most common case)
+    // Optimize by checking first char before comparing full window
     if needle.is_ascii() && haystack.is_ascii() {
         let needle_bytes = needle.as_bytes();
         let haystack_bytes = haystack.as_bytes();
-        return haystack_bytes.windows(needle_bytes.len()).any(|window| {
-            window
+        let first_lower = needle_bytes[0].to_ascii_lowercase();
+
+        for i in 0..=(haystack_bytes.len() - needle_bytes.len()) {
+            // Short-circuit: check first character before full comparison
+            if haystack_bytes[i].to_ascii_lowercase() != first_lower {
+                continue;
+            }
+            // First char matches, now check the rest
+            let window = &haystack_bytes[i..i + needle_bytes.len()];
+            if window
                 .iter()
                 .zip(needle_bytes)
                 .all(|(h, n)| h.to_ascii_lowercase() == n.to_ascii_lowercase())
-        });
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     // Slow path: Unicode (rare, but needed for correctness)

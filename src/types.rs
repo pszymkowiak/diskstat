@@ -12,8 +12,8 @@ pub struct FileTree {
     pub arena: Arena<FileEntry>,
     pub root: NodeId,
     pub root_path: PathBuf,
-    /// Cache for sorted children to avoid re-sorting on every call
-    pub sorted_cache: RefCell<HashMap<NodeId, Vec<NodeId>>>,
+    /// Cache for sorted children (composite key: (node_id, sort_mode))
+    pub sorted_cache: RefCell<HashMap<(NodeId, SortMode), Vec<NodeId>>>,
 }
 
 impl FileTree {
@@ -68,16 +68,24 @@ impl FileTree {
     }
 
     /// Invalidate the sorted children cache (call after tree mutations).
-    /// Invalidate the sorted children cache (call after tree mutations).
     pub fn invalidate_sort_cache(&self) {
         self.sorted_cache.borrow_mut().clear();
     }
 
     /// Get sorted children of a node according to the given sort mode.
-    /// Note: Currently not cached per-mode (performance optimization TODO).
+    /// Results are cached per (node_id, mode) to avoid re-sorting.
     pub fn sorted_children_with_mode(&self, node_id: NodeId, mode: SortMode) -> Vec<NodeId> {
-        // TODO: Cache with composite key (node_id, mode)
-        // For now we skip caching to avoid stale results on mode changes
+        let cache_key = (node_id, mode);
+
+        // Check cache first
+        {
+            let cache = self.sorted_cache.borrow();
+            if let Some(cached) = cache.get(&cache_key) {
+                return cached.clone();
+            }
+        }
+
+        // Cache miss: collect and sort children
         let mut children: Vec<NodeId> = node_id.children(&self.arena).collect();
 
         match mode {
@@ -125,6 +133,10 @@ impl FileTree {
             }
         }
 
+        // Store in cache
+        self.sorted_cache
+            .borrow_mut()
+            .insert(cache_key, children.clone());
         children
     }
 
