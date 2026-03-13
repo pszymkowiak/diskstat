@@ -936,6 +936,56 @@ enum InputAction {
     SubtreeRescan(indextree::NodeId, PathBuf),
 }
 
+/// Hit-test the file tree panel to determine which node was clicked.
+/// Returns Some(NodeId) if a visible node was clicked, None otherwise.
+fn hit_test_tree(app: &App, mx: u16, my: u16) -> Option<NodeId> {
+    // We need to know the tree panel's bounds
+    // In the TreeMap tab, the tree is in the left panel
+    // The content_area is the full top area, and last_tree_area would be ideal
+    // But we don't have last_tree_area stored, so we need to infer it
+
+    // Quick check: if we don't have a tree, bail
+    app.tree.as_ref()?;
+
+    // The tree area is the left panel when treemap is visible, or the full width otherwise
+    // We need to check if the click is within the tree panel bounds
+    // The visible nodes start at content_area.y + 1 (accounting for border)
+    // and extend for visible_nodes.len() rows
+
+    let content = app.content_area;
+    let tree_x_start = content.x;
+    let tree_x_end = if app.show_treemap {
+        content.x + (content.width * app.split_pct / 100)
+    } else {
+        content.x + content.width
+    };
+
+    // Tree panel has a border, so inner area is +1 on all sides
+    let tree_inner_x = tree_x_start + 1;
+    let tree_inner_y = content.y + 1;
+    let tree_inner_width = tree_x_end.saturating_sub(tree_x_start).saturating_sub(2);
+    let tree_inner_height = content.height.saturating_sub(2);
+
+    // Check if click is within tree panel bounds
+    if mx < tree_inner_x || mx >= tree_inner_x + tree_inner_width {
+        return None;
+    }
+    if my < tree_inner_y || my >= tree_inner_y + tree_inner_height {
+        return None;
+    }
+
+    // Calculate which row was clicked (relative to scroll offset)
+    let row_offset = my.saturating_sub(tree_inner_y) as usize;
+    let visible_index = app.tree_state.scroll_offset + row_offset;
+
+    if visible_index < app.tree_state.visible_nodes.len() {
+        let (node_id, _, _) = app.tree_state.visible_nodes[visible_index];
+        Some(node_id)
+    } else {
+        None
+    }
+}
+
 fn handle_mouse(app: &mut App, mouse: crossterm::event::MouseEvent) {
     use crossterm::event::{MouseButton, MouseEventKind};
 
@@ -971,6 +1021,30 @@ fn handle_mouse(app: &mut App, mouse: crossterm::event::MouseEvent) {
             }
 
             app.status_message = None;
+
+            // Hit-test file tree: check if clicking on a visible node in the tree panel
+            if app.active_tab == ActiveTab::TreeMap {
+                if let Some(clicked_node) = hit_test_tree(app, mx, my) {
+                    let tree = app.tree.as_ref().unwrap();
+                    let is_dir = tree.arena[clicked_node].get().is_dir;
+                    let is_expanded = app.tree_state.expanded.contains(&clicked_node);
+
+                    // Select the node
+                    app.tree_state.selected = Some(clicked_node);
+                    app.sync_treemap_selection();
+
+                    // Toggle expand/collapse if it's a directory
+                    if is_dir {
+                        if is_expanded {
+                            app.tree_state.expanded.remove(&clicked_node);
+                        } else {
+                            app.tree_state.expanded.insert(clicked_node);
+                        }
+                        app.rebuild_visible_nodes();
+                    }
+                    return;
+                }
+            }
 
             // Hit-test treemap: iterate in reverse (last = smallest/deepest rectangle)
             for hit in app.treemap_hits.iter().rev() {

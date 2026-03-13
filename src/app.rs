@@ -412,7 +412,7 @@ impl App {
     }
 
     /// Sync treemap selection with tree selection.
-    fn sync_treemap_selection(&mut self) {
+    pub fn sync_treemap_selection(&mut self) {
         self.treemap_selected = self.tree_state.selected;
     }
 
