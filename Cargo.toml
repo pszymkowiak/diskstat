@@ -3,7 +3,7 @@ name = "diskstat"
 version = "0.7.0"
 edition = "2021"
 description = "Fast TUI disk usage analyzer — WinDirStat/ncdu alternative"
-license = "MIT"
+license = "LicenseRef-DiskStat-Source-Available"
 repository = "https://github.com/pszymkowiak/diskstat"
 default-run = "diskstat"
 
