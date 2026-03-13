@@ -27,10 +27,10 @@ use crossterm::terminal::{
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
-use app::{ActivePane, ActiveTab, App, ScanState};
+use app::{ActivePane, ActiveTab, App, DupeState, ScanState};
 use indextree::NodeId;
 use scanner::debug_log::DebugLog;
-use types::ScanProgress;
+use types::{DuplicateGroup, ScanProgress};
 use ui::menu::{self, MenuAction};
 
 /// Fast TUI disk usage analyzer — WinDirStat/ncdu alternative
@@ -136,6 +136,10 @@ fn run_app(
     } else {
         None
     };
+    let mut dupe_handle: Option<std::thread::JoinHandle<Vec<DuplicateGroup>>> = None;
+    let mut delete_handle: Option<std::thread::JoinHandle<Result<(), String>>> = None;
+    let mut delete_path_pending: Option<PathBuf> = None;
+
     let mut scan_handle = if let Some(tree) = cached_tree {
         let elapsed = start.elapsed();
         let node_count = tree.arena.count();
@@ -190,6 +194,85 @@ fn run_app(
         // Poll progress from scanner
         app.poll_progress();
 
+        // Check if duplicate scan thread completed
+        if let Some(handle) = dupe_handle.take() {
+            if handle.is_finished() {
+                match handle.join() {
+                    Ok(dupes) => {
+                        app.duplicates = dupes;
+                        app.dupes_state = DupeState::Done;
+                        app.status_message = Some(format!(
+                            "{} {}",
+                            app.strings
+                                .found_duplicate_groups
+                                .replace("{}", &app.duplicates.len().to_string()),
+                            ""
+                        ));
+                        app.needs_redraw = true;
+                    }
+                    Err(_) => {
+                        app.dupes_state = DupeState::Idle;
+                        app.status_message = Some("Duplicate scan failed".to_string());
+                        app.needs_redraw = true;
+                    }
+                }
+            } else {
+                // Put it back if not finished
+                dupe_handle = Some(handle);
+            }
+        }
+
+        // Check if delete thread completed
+        if let Some(handle) = delete_handle.take() {
+            if handle.is_finished() {
+                match handle.join() {
+                    Ok(Ok(())) => {
+                        app.deleting = false;
+                        if let Some(path) = delete_path_pending.take() {
+                            app.status_message =
+                                Some(format!("{}: {}", app.strings.deleted, path.display()));
+                        }
+                        app.needs_redraw = true;
+                        // Trigger force rescan
+                        if let Some(ref d) = dlog {
+                            d.log_json(
+                                "force_rescan_after_delete",
+                                &[("root_path", &app.root_path.to_string_lossy())],
+                            );
+                        }
+                        scanner::tree_cache::invalidate(&app.root_path);
+                        if let Ok(mut cache) = scanner::cache::ScanCache::open(&app.root_path) {
+                            let _ = cache.invalidate_all();
+                        }
+                        app.reset_for_scan(app.root_path.clone());
+                        let (tx, rx) = mpsc::channel();
+                        app.progress_rx = Some(rx);
+                        app.scan_state = ScanState::Scanning;
+                        scan_handle = Some(scanner::walk::scan_directory(
+                            app.root_path.clone(),
+                            tx,
+                            app.exclude_patterns.clone(),
+                        ));
+                    }
+                    Ok(Err(e)) => {
+                        app.deleting = false;
+                        delete_path_pending = None;
+                        app.status_message = Some(e);
+                        app.needs_redraw = true;
+                    }
+                    Err(_) => {
+                        app.deleting = false;
+                        delete_path_pending = None;
+                        app.status_message = Some("Delete thread panicked".to_string());
+                        app.needs_redraw = true;
+                    }
+                }
+            } else {
+                // Put it back if not finished
+                delete_handle = Some(handle);
+            }
+        }
+
         // Check if scan thread completed and grab the tree
         if app.scan_state == ScanState::Done && app.tree.is_none() {
             if let Some(handle) = scan_handle.take() {
@@ -239,7 +322,10 @@ fn run_app(
             app.needs_redraw = false;
         }
 
-        let poll_timeout = if app.scan_state == ScanState::Scanning {
+        let poll_timeout = if app.scan_state == ScanState::Scanning
+            || app.dupes_state == DupeState::Scanning
+            || app.deleting
+        {
             Duration::from_millis(50)
         } else {
             Duration::from_millis(200)
@@ -341,6 +427,33 @@ fn run_app(
                                 app.status_message = Some("Subtree rescan failed".to_string());
                             }
                         }
+                        InputAction::StartDuplicateScan => {
+                            if let Some(tree) = &app.tree {
+                                if let Some(ref d) = dlog {
+                                    d.log_json("duplicate_scan_start", &[]);
+                                }
+                                app.dupes_state = DupeState::Scanning;
+                                app.status_message =
+                                    Some(app.strings.scanning_duplicates.to_string());
+                                // Create a thread-safe snapshot for the background thread
+                                let snapshot = scanner::dupes::FileSnapshot::from_tree(tree);
+                                dupe_handle = Some(std::thread::spawn(move || {
+                                    scanner::dupes::find_duplicates_from_snapshot(&snapshot)
+                                }));
+                            }
+                        }
+                        InputAction::StartDelete(path) => {
+                            if let Some(ref d) = dlog {
+                                d.log_json("delete_start", &[("path", &path.to_string_lossy())]);
+                            }
+                            app.deleting = true;
+                            app.status_message = Some(app.strings.deleting.to_string());
+                            let root_path = app.root_path.clone();
+                            delete_path_pending = Some(path.clone());
+                            delete_handle = Some(std::thread::spawn(move || {
+                                actions::delete_path(&path, &root_path)
+                            }));
+                        }
                         InputAction::Continue => {}
                     }
                 }
@@ -389,15 +502,7 @@ fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputA
         match code {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
                 if let Some((path, _size)) = app.confirm_delete.take() {
-                    match actions::delete_path(&path, &app.root_path) {
-                        Ok(()) => {
-                            app.status_message = Some(format!("Deleted: {}", path.display()));
-                            return InputAction::ForceRescan(app.root_path.clone());
-                        }
-                        Err(e) => {
-                            app.status_message = Some(e);
-                        }
-                    }
+                    return InputAction::StartDelete(path);
                 }
             }
             _ => {
@@ -503,16 +608,10 @@ fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputA
             }
         }
         KeyCode::Char('s') => {
-            if app.active_tab == ActiveTab::Duplicates && !app.dupes_scanning {
-                // Scan for duplicates
-                if let Some(tree) = &app.tree {
-                    app.dupes_scanning = true;
-                    app.status_message = Some("Scanning for duplicates...".to_string());
-                    let dupes = scanner::dupes::find_duplicates(tree);
-                    app.duplicates = dupes;
-                    app.dupes_scanning = false;
-                    app.status_message =
-                        Some(format!("Found {} duplicate groups", app.duplicates.len()));
+            if app.active_tab == ActiveTab::Duplicates && app.dupes_state != DupeState::Scanning {
+                // Scan for duplicates (async)
+                if app.tree.is_some() {
+                    return InputAction::StartDuplicateScan;
                 }
             } else if app.active_tab == ActiveTab::TreeMap {
                 // Cycle sort mode
@@ -934,6 +1033,8 @@ enum InputAction {
     Rescan(PathBuf),
     ForceRescan(PathBuf),
     SubtreeRescan(indextree::NodeId, PathBuf),
+    StartDuplicateScan,
+    StartDelete(PathBuf),
 }
 
 /// Hit-test the file tree panel to determine which node was clicked.

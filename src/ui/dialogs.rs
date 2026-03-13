@@ -184,7 +184,7 @@ pub fn draw_duplicates(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
         .title(title)
         .border_style(Style::default().fg(style.border_color));
 
-    if app.dupes_scanning {
+    if app.dupes_state == crate::app::DupeState::Scanning {
         let text = Paragraph::new(app.strings.scanning_duplicates).block(block);
         f.render_widget(text, area);
         return;

@@ -86,6 +86,8 @@ pub struct Strings {
     pub filter_active: &'static str,
     pub filter_cleared: &'static str,
     pub min_size: &'static str,
+    pub deleting: &'static str,
+    pub delete_complete: &'static str,
 }
 
 /// Get strings for a specific language.
@@ -159,6 +161,8 @@ static EN: Strings = Strings {
     filter_active: "Filter active: min {}",
     filter_cleared: "Filter cleared",
     min_size: "Min size",
+    deleting: "Deleting...",
+    delete_complete: "Delete complete",
 };
 
 static FR: Strings = Strings {
@@ -224,4 +228,6 @@ static FR: Strings = Strings {
     filter_active: "Filtre actif: min {}",
     filter_cleared: "Filtre désactivé",
     min_size: "Taille min",
+    deleting: "Suppression...",
+    delete_complete: "Suppression terminée",
 };

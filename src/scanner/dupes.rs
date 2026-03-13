@@ -8,6 +8,29 @@ use rayon::prelude::*;
 
 use crate::types::{DuplicateGroup, FileTree};
 
+/// Thread-safe representation of files for duplicate scanning
+pub struct FileSnapshot {
+    pub files: Vec<(PathBuf, u64)>, // (path, size)
+}
+
+impl FileSnapshot {
+    pub fn from_tree(tree: &FileTree) -> Self {
+        let files: Vec<(PathBuf, u64)> = tree
+            .root
+            .descendants(&tree.arena)
+            .filter_map(|node_id| {
+                let entry = tree.arena[node_id].get();
+                if !entry.is_dir && entry.size > 0 {
+                    Some((tree.full_path(node_id), entry.size))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        FileSnapshot { files }
+    }
+}
+
 const PARTIAL_HASH_SIZE: usize = 4096;
 const FULL_HASH_BUF_SIZE: usize = 65536;
 
@@ -21,15 +44,17 @@ thread_local! {
 /// 2. Partial hash (first 4KB)
 /// 3. Full hash (only if partial collision)
 pub fn find_duplicates(tree: &FileTree) -> Vec<DuplicateGroup> {
+    let snapshot = FileSnapshot::from_tree(tree);
+    find_duplicates_from_snapshot(&snapshot)
+}
+
+/// Find duplicates from a thread-safe snapshot (can be used in background threads)
+pub fn find_duplicates_from_snapshot(snapshot: &FileSnapshot) -> Vec<DuplicateGroup> {
     // Pass 1: group files by size
     let mut size_groups: HashMap<u64, Vec<PathBuf>> = HashMap::new();
 
-    for node_id in tree.root.descendants(&tree.arena) {
-        let entry = tree.arena[node_id].get();
-        if !entry.is_dir && entry.size > 0 {
-            let path = tree.full_path(node_id);
-            size_groups.entry(entry.size).or_default().push(path);
-        }
+    for (path, size) in &snapshot.files {
+        size_groups.entry(*size).or_default().push(path.clone());
     }
 
     // Keep only groups with 2+ files

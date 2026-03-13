@@ -5,64 +5,98 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
-use crate::app::{ActiveTab, App, ScanState};
+use crate::app::{ActiveTab, App, DupeState, ScanState};
 use crate::ui::style::UiStyle;
+
+/// Get animated braille spinner character based on time
+fn spinner_char() -> &'static str {
+    let frame = (std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+        / 200)
+        % 8;
+    let progress_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"];
+    progress_chars[frame as usize]
+}
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect, style: &UiStyle) {
     let mut spans: Vec<Span> = Vec::new();
 
-    match app.scan_state {
-        ScanState::Scanning => {
-            spans.push(Span::styled(
-                format!(" {} ", app.strings.scanning.to_uppercase()),
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ));
+    // Priority: delete > duplicate scan > main scan
+    if app.deleting {
+        spans.push(Span::styled(
+            format!(" {} ", app.strings.deleting.to_uppercase()),
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Red)
+                .add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(
+            spinner_char(),
+            Style::default().fg(Color::Red),
+        ));
+    } else if app.dupes_state == DupeState::Scanning {
+        spans.push(Span::styled(
+            format!(" {} ", app.strings.scanning_duplicates.to_uppercase()),
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(
+            spinner_char(),
+            Style::default().fg(Color::Magenta),
+        ));
+    } else {
+        match app.scan_state {
+            ScanState::Scanning => {
+                spans.push(Span::styled(
+                    format!(" {} ", app.strings.scanning.to_uppercase()),
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ));
 
-            // Progress bar: show file count and size
-            let progress_text = format!(
-                " {} {} ({}) ",
-                app.file_count,
-                app.strings.files,
-                ByteSize(app.total_size)
-            );
-            spans.push(Span::raw(progress_text));
+                // Progress bar: show file count and size
+                let progress_text = format!(
+                    " {} {} ({}) ",
+                    app.file_count,
+                    app.strings.files,
+                    ByteSize(app.total_size)
+                );
+                spans.push(Span::raw(progress_text));
 
-            // Add animated progress indicator
-            let frame = (std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis()
-                / 200)
-                % 8;
-            let progress_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"];
-            spans.push(Span::styled(
-                progress_chars[frame as usize],
-                Style::default().fg(Color::Yellow),
-            ));
-        }
-        ScanState::Done => {
-            spans.push(Span::styled(
-                format!(" {} ", app.strings.done),
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
-            ));
-            spans.push(Span::raw(format!(
-                " {} {} | {} ",
-                app.file_count,
-                app.strings.files,
-                ByteSize(app.total_size)
-            )));
-        }
-        ScanState::Idle => {
-            spans.push(Span::styled(
-                format!(" {} ", app.strings.idle),
-                Style::default().fg(Color::Black).bg(Color::Gray),
-            ));
+                // Add animated progress indicator
+                spans.push(Span::styled(
+                    spinner_char(),
+                    Style::default().fg(Color::Yellow),
+                ));
+            }
+            ScanState::Done => {
+                spans.push(Span::styled(
+                    format!(" {} ", app.strings.done),
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                ));
+                spans.push(Span::raw(format!(
+                    " {} {} | {} ",
+                    app.file_count,
+                    app.strings.files,
+                    ByteSize(app.total_size)
+                )));
+            }
+            ScanState::Idle => {
+                spans.push(Span::styled(
+                    format!(" {} ", app.strings.idle),
+                    Style::default().fg(Color::Black).bg(Color::Gray),
+                ));
+            }
         }
     }
 

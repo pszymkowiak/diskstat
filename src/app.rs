@@ -71,6 +71,13 @@ pub enum ScanState {
     Done,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DupeState {
+    Idle,
+    Scanning,
+    Done,
+}
+
 pub struct App {
     pub root_path: PathBuf,
     pub tree: Option<FileTree>,
@@ -105,7 +112,7 @@ pub struct App {
     // Duplicates
     pub duplicates: Vec<DuplicateGroup>,
     pub dupes_selected_index: usize,
-    pub dupes_scanning: bool,
+    pub dupes_state: DupeState,
 
     // Progress channel
     pub progress_rx: Option<mpsc::Receiver<ScanProgress>>,
@@ -157,6 +164,9 @@ pub struct App {
     pub dragging_split: bool, // true while mouse-dragging the separator
     pub last_split_x: u16,    // x-coordinate of the separator (updated during draw)
     pub content_area: ratatui::layout::Rect, // content area (for mouse→pct conversion)
+
+    // Delete operation
+    pub deleting: bool,
 
     // Rendering
     pub needs_redraw: bool,
@@ -223,7 +233,7 @@ impl App {
             ext_selected_index: 0,
             duplicates: Vec::new(),
             dupes_selected_index: 0,
-            dupes_scanning: false,
+            dupes_state: DupeState::Idle,
             progress_rx: None,
             show_help: false,
             confirm_delete: None,
@@ -251,6 +261,7 @@ impl App {
             dragging_split: false,
             last_split_x: 0,
             content_area: ratatui::layout::Rect::default(),
+            deleting: false,
             needs_redraw: true,
         }
     }
@@ -575,7 +586,7 @@ impl App {
         self.ext_selected_index = 0;
         self.duplicates.clear();
         self.dupes_selected_index = 0;
-        self.dupes_scanning = false;
+        self.dupes_state = DupeState::Idle;
         self.progress_rx = None;
         self.status_message = None;
         self.active_tab = ActiveTab::TreeMap;
