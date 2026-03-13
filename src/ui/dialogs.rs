@@ -126,7 +126,7 @@ pub fn draw_help(f: &mut Frame, app: &App, style: &UiStyle) {
 }
 
 pub fn draw_confirm_delete(f: &mut Frame, app: &App, style: &UiStyle) {
-    if let Some((path, size)) = &app.confirm_delete {
+    if let Some((path, size, _node_id)) = &app.confirm_delete {
         let area = centered_rect(50, 25, f.area());
         f.render_widget(Clear, area);
 

@@ -119,7 +119,7 @@ pub struct App {
 
     // Dialog state
     pub show_help: bool,
-    pub confirm_delete: Option<(PathBuf, u64)>,
+    pub confirm_delete: Option<(PathBuf, u64, indextree::NodeId)>,
     pub path_input: Option<PathInput>,
 
     // Status message

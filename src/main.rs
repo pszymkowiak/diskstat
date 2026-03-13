@@ -138,7 +138,7 @@ fn run_app(
     };
     let mut dupe_handle: Option<std::thread::JoinHandle<Vec<DuplicateGroup>>> = None;
     let mut delete_handle: Option<std::thread::JoinHandle<Result<(), String>>> = None;
-    let mut delete_path_pending: Option<PathBuf> = None;
+    let mut delete_path_pending: Option<(PathBuf, indextree::NodeId)> = None;
 
     let mut scan_handle = if let Some(tree) = cached_tree {
         let elapsed = start.elapsed();
@@ -245,31 +245,53 @@ fn run_app(
                 match handle.join() {
                     Ok(Ok(())) => {
                         app.deleting = false;
-                        if let Some(path) = delete_path_pending.take() {
+                        if let Some((path, node_id)) = delete_path_pending.take() {
                             app.status_message =
                                 Some(format!("{}: {}", app.strings.deleted, path.display()));
+
+                            // Remove node from in-memory tree and recompute sizes
+                            // (no full rescan needed)
+                            if let Some(tree) = &mut app.tree {
+                                let parent = tree.remove_node(node_id);
+
+                                // Invalidate only the parent dir in SQLite cache
+                                if let Some(parent_id) = parent {
+                                    let parent_path = tree.full_path(parent_id);
+                                    if let Ok(mut cache) =
+                                        scanner::cache::ScanCache::open(&app.root_path)
+                                    {
+                                        let _ = cache.invalidate_dir(&parent_path);
+                                    }
+                                }
+
+                                // Update binary tree cache with new state
+                                let _ = scanner::tree_cache::save_tree(tree);
+                            }
+
+                            // Update stats and UI state
+                            if let Some(tree) = &app.tree {
+                                let root = tree.root;
+                                let root_entry = tree.arena[root].get();
+                                app.file_count = root_entry.file_count;
+                                app.total_size = root_entry.size;
+                                app.ext_stats =
+                                    crate::scanner::tree::compute_extension_stats(tree);
+                                app.ext_color_map =
+                                    crate::scanner::tree::extension_color_map(&app.ext_stats);
+                            }
+
+                            // Move selection to parent if the deleted node was selected
+                            if app.tree_state.selected == Some(node_id) {
+                                if let Some(tree) = &app.tree {
+                                    app.tree_state.selected =
+                                        Some(tree.root);
+                                }
+                            }
+                            app.tree_state.expanded.remove(&node_id);
+                            app.rebuild_visible_nodes();
+                            app.update_disk_space();
                         }
                         app.needs_redraw = true;
-                        // Trigger force rescan
-                        if let Some(ref d) = dlog {
-                            d.log_json(
-                                "force_rescan_after_delete",
-                                &[("root_path", &app.root_path.to_string_lossy())],
-                            );
-                        }
-                        scanner::tree_cache::invalidate(&app.root_path);
-                        if let Ok(mut cache) = scanner::cache::ScanCache::open(&app.root_path) {
-                            let _ = cache.invalidate_all();
-                        }
-                        app.reset_for_scan(app.root_path.clone());
-                        let (tx, rx) = mpsc::channel();
-                        app.progress_rx = Some(rx);
-                        app.scan_state = ScanState::Scanning;
-                        scan_handle = Some(scanner::walk::scan_directory(
-                            app.root_path.clone(),
-                            tx,
-                            app.exclude_patterns.clone(),
-                        ));
                     }
                     Ok(Err(e)) => {
                         app.deleting = false;
@@ -506,14 +528,14 @@ fn run_app(
                                 }));
                             }
                         }
-                        InputAction::StartDelete(path) => {
+                        InputAction::StartDelete(path, node_id) => {
                             if let Some(ref d) = dlog {
                                 d.log_json("delete_start", &[("path", &path.to_string_lossy())]);
                             }
                             app.deleting = true;
                             app.status_message = Some(app.strings.deleting.to_string());
                             let root_path = app.root_path.clone();
-                            delete_path_pending = Some(path.clone());
+                            delete_path_pending = Some((path.clone(), node_id));
                             delete_handle = Some(std::thread::spawn(move || {
                                 actions::delete_path(&path, &root_path)
                             }));
@@ -565,8 +587,8 @@ fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputA
     if app.confirm_delete.is_some() {
         match code {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
-                if let Some((path, _size)) = app.confirm_delete.take() {
-                    return InputAction::StartDelete(path);
+                if let Some((path, _size, node_id)) = app.confirm_delete.take() {
+                    return InputAction::StartDelete(path, node_id);
                 }
             }
             _ => {
@@ -650,7 +672,7 @@ fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputA
                 if let Some(tree) = &app.tree {
                     let size = tree.arena[selected].get().size;
                     if let Some(path) = app.selected_path() {
-                        app.confirm_delete = Some((path, size));
+                        app.confirm_delete = Some((path, size, selected));
                     }
                 }
             }
@@ -1098,7 +1120,7 @@ enum InputAction {
     ForceRescan(PathBuf),
     SubtreeRescan(indextree::NodeId, PathBuf),
     StartDuplicateScan,
-    StartDelete(PathBuf),
+    StartDelete(PathBuf, indextree::NodeId),
 }
 
 /// Hit-test the file tree panel to determine which node was clicked.
