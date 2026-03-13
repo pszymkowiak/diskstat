@@ -139,6 +139,8 @@ fn run_app(
     let mut dupe_handle: Option<std::thread::JoinHandle<Vec<DuplicateGroup>>> = None;
     let mut delete_handle: Option<std::thread::JoinHandle<Result<(), String>>> = None;
     let mut delete_path_pending: Option<(PathBuf, Option<indextree::NodeId>)> = None;
+    let mut subtree_handle: Option<std::thread::JoinHandle<Option<crate::types::FileTree>>> = None;
+    let mut subtree_target_node: Option<indextree::NodeId> = None;
 
     let mut scan_handle = if let Some(tree) = cached_tree {
         let elapsed = start.elapsed();
@@ -318,6 +320,54 @@ fn run_app(
             }
         }
 
+        // Check if subtree rescan thread completed
+        if let Some(handle) = subtree_handle.take() {
+            if handle.is_finished() {
+                match handle.join() {
+                    Ok(Some(mini_tree)) => {
+                        if let Some(target_node) = subtree_target_node.take() {
+                            if let Some(tree) = &mut app.tree {
+                                // Remove old children of target node
+                                let old_children: Vec<_> =
+                                    target_node.children(&tree.arena).collect();
+                                for child in old_children {
+                                    child.detach(&mut tree.arena);
+                                }
+                                // Graft new children from mini_tree
+                                graft_children(tree, target_node, &mini_tree, mini_tree.root);
+                                tree.compute_sizes();
+                            }
+                            // Recompute extension stats
+                            if let Some(tree) = &app.tree {
+                                let stats = scanner::tree::compute_extension_stats(tree);
+                                let color_map = scanner::tree::extension_color_map(&stats);
+                                app.ext_stats = stats;
+                                app.ext_color_map = color_map;
+
+                                let root_entry = tree.arena[tree.root].get();
+                                app.file_count = root_entry.file_count;
+                                app.total_size = root_entry.size;
+                            }
+                            app.rebuild_visible_nodes();
+                            app.subtree_target = None;
+                            app.scan_state = ScanState::Done;
+                            app.status_message =
+                                Some("Subtree rescan complete".to_string());
+                        }
+                    }
+                    _ => {
+                        subtree_target_node = None;
+                        app.subtree_target = None;
+                        app.scan_state = ScanState::Done;
+                        app.status_message = Some("Subtree rescan failed".to_string());
+                    }
+                }
+                app.needs_redraw = true;
+            } else {
+                subtree_handle = Some(handle);
+            }
+        }
+
         // Check if scan thread completed and grab the tree
         if app.scan_state == ScanState::Done && app.tree.is_none() {
             if let Some(handle) = scan_handle.take() {
@@ -476,43 +526,22 @@ fn run_app(
                             }
                             app.status_message =
                                 Some(format!("Rescanning {}...", subtree_path.display()));
-                            // Perform subtree rescan synchronously (blocking)
-                            let (tx, _rx) = mpsc::channel();
-                            let handle = scanner::walk::scan_directory(
-                                subtree_path,
-                                tx,
-                                app.exclude_patterns.clone(),
-                            );
-                            if let Ok(Some(mini_tree)) = handle.join() {
-                                if let Some(tree) = &mut app.tree {
-                                    // Remove old children of target node
-                                    let old_children: Vec<_> =
-                                        target_node.children(&tree.arena).collect();
-                                    for child in old_children {
-                                        child.detach(&mut tree.arena);
-                                    }
-                                    // Graft new children from mini_tree
-                                    graft_children(tree, target_node, &mini_tree, mini_tree.root);
-                                    tree.compute_sizes();
-                                }
-                                // Recompute extension stats
-                                if let Some(tree) = &app.tree {
-                                    let stats = scanner::tree::compute_extension_stats(tree);
-                                    let color_map = scanner::tree::extension_color_map(&stats);
-                                    app.ext_stats = stats;
-                                    app.ext_color_map = color_map;
-
-                                    let root_entry = tree.arena[tree.root].get();
-                                    app.file_count = root_entry.file_count;
-                                    app.total_size = root_entry.size;
-                                }
-                                app.rebuild_visible_nodes();
-                                app.subtree_target = None;
-                                app.status_message = Some("Subtree rescan complete".to_string());
-                            } else {
-                                app.subtree_target = None;
-                                app.status_message = Some("Subtree rescan failed".to_string());
-                            }
+                            app.scan_state = ScanState::Scanning;
+                            subtree_target_node = Some(target_node);
+                            let exclude = app.exclude_patterns.clone();
+                            let (tx, rx) = mpsc::channel();
+                            app.progress_rx = Some(rx);
+                            subtree_handle = Some(std::thread::spawn(move || {
+                                let (inner_tx, _inner_rx) = mpsc::channel();
+                                let handle = scanner::walk::scan_directory(
+                                    subtree_path,
+                                    inner_tx,
+                                    exclude,
+                                );
+                                // Forward progress via the outer channel
+                                let _ = tx.send(ScanProgress::Done);
+                                handle.join().ok().flatten()
+                            }));
                         }
                         InputAction::StartDuplicateScan => {
                             if let Some(tree) = &app.tree {
