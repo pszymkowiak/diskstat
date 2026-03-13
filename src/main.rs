@@ -367,6 +367,14 @@ fn run_app(
             }
         }
 
+        // Force redraw during background operations (animated spinners)
+        if app.scan_state == ScanState::Scanning
+            || app.dupes_state == DupeState::Scanning
+            || app.deleting
+        {
+            app.needs_redraw = true;
+        }
+
         // Draw only when needed
         if app.needs_redraw {
             terminal.draw(|f| ui::draw(f, &mut app))?;
