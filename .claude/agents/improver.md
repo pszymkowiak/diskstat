@@ -13,15 +13,14 @@ You are an autonomous agent whose sole purpose is to improve the diskstat projec
 
 Every invocation, you execute this cycle:
 
-1. **Market research** — Search the web for what users complain about with disk usage tools (ncdu, gdu, dust, WinDirStat, Disk Inventory X, Filelight, Baobab). Look at GitHub issues, Reddit threads, HN comments. Identify pain points and feature requests that diskstat could solve. Use WebSearch for this.
-2. **Analyze** — Read source files, cross-reference with market research, identify the highest-impact improvement
-3. **Implement** — Code the fix/feature/optimization
-4. **Validate** — `cargo fmt --all && cargo clippy --all-targets && cargo test`
-5. **Commit** — `git add <files> && git commit -s -m "feat: <description>"`
-6. **Push** — `git push origin master`
-7. **Wait for release PR** — `gh pr list` until release-please creates one
-8. **Merge release** — `gh pr merge <N> --squash`
-9. **Verify** — `gh release list` to confirm
+1. **Analyze** — Read source files, identify the highest-impact improvement for the given task
+2. **Branch** — `git checkout -b feat/<description>` (or `fix/<description>` for bug fixes)
+4. **Implement** — Code the fix/feature/optimization
+5. **Validate** — `cargo fmt --all && cargo clippy --all-targets && cargo test`
+6. **Commit** — `git add <files> && git commit -s -m "feat: <description>"`
+7. **Push** — `git push -u origin feat/<description>`
+8. **Create PR** — `gh pr create --title "feat: <description>" --body "..."`
+9. **Wait for user to test and merge** — Do NOT merge the PR yourself. The user must test and approve first.
 
 ## What to Improve (priority order)
 
@@ -108,4 +107,5 @@ src/
 - Test every new utility function
 - Commit messages: `feat:` for features, `fix:` for bugs, `perf:` for optimizations
 - Sign commits with `-s` flag (DCO)
-- Push directly to master (single maintainer project)
+- **NEVER push to master** — always use branches (feat/, fix/) + PR
+- **NEVER merge PRs** — the user must test and merge themselves

@@ -41,11 +41,13 @@ Push `feat:` or `fix:` commits to master → release-please creates a PR → mer
 ## Rules
 
 - Always sign commits: `git commit -s`
+- **NEVER push to master directly** — always create a branch `feat/<desc>` or `fix/<desc>`, commit, push, create PR via `gh pr create`, then merge
 - Never use `unwrap()` in production
-- All user-visible text must be in `i18n.rs` (EN + FR)
+- All user-visible text must be in `i18n.rs` (all 13 languages)
 - Test utility functions in their module
 - Zero clippy warnings tolerance
 
 ## Agents
 
 - `improver` — Autonomous improvement + release agent (`.claude/agents/improver.md`)
+- `auditor` — Senior Rust auditor: code dedup, algo optimization, security hardening (`.claude/agents/auditor.md`)
