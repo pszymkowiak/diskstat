@@ -121,6 +121,8 @@ pub struct Strings {
     pub min_size: &'static str,
     pub deleting: &'static str,
     pub delete_complete: &'static str,
+    pub error_prefix: &'static str, // "Error: {}"
+    pub match_label: &'static str,  // "Match {}/{}" (used in search)
 }
 
 /// Get strings for a specific language.
@@ -207,6 +209,8 @@ static EN: Strings = Strings {
     min_size: "Min size",
     deleting: "Deleting...",
     delete_complete: "Delete complete",
+    error_prefix: "Error",
+    match_label: "Match",
 };
 
 static FR: Strings = Strings {
@@ -274,6 +278,8 @@ static FR: Strings = Strings {
     min_size: "Taille min",
     deleting: "Suppression...",
     delete_complete: "Suppression terminée",
+    error_prefix: "Erreur",
+    match_label: "Résultat",
 };
 
 static DE: Strings = Strings {
@@ -341,6 +347,8 @@ static DE: Strings = Strings {
     min_size: "Mindestgröße",
     deleting: "Wird gelöscht...",
     delete_complete: "Löschen abgeschlossen",
+    error_prefix: "Fehler",
+    match_label: "Treffer",
 };
 
 static ES: Strings = Strings {
@@ -408,6 +416,8 @@ static ES: Strings = Strings {
     min_size: "Tamaño mínimo",
     deleting: "Eliminando...",
     delete_complete: "Eliminación completa",
+    error_prefix: "Error",
+    match_label: "Coincidencia",
 };
 
 static IT: Strings = Strings {
@@ -475,6 +485,8 @@ static IT: Strings = Strings {
     min_size: "Dimensione minima",
     deleting: "Eliminazione...",
     delete_complete: "Eliminazione completata",
+    error_prefix: "Errore",
+    match_label: "Risultato",
 };
 
 static PT: Strings = Strings {
@@ -542,6 +554,8 @@ static PT: Strings = Strings {
     min_size: "Tamanho mínimo",
     deleting: "Excluindo...",
     delete_complete: "Exclusão concluída",
+    error_prefix: "Erro",
+    match_label: "Resultado",
 };
 
 static NL: Strings = Strings {
@@ -609,6 +623,8 @@ static NL: Strings = Strings {
     min_size: "Minimale grootte",
     deleting: "Verwijderen...",
     delete_complete: "Verwijderen voltooid",
+    error_prefix: "Fout",
+    match_label: "Resultaat",
 };
 
 static PL: Strings = Strings {
@@ -676,6 +692,8 @@ static PL: Strings = Strings {
     min_size: "Minimalny rozmiar",
     deleting: "Usuwanie...",
     delete_complete: "Usuwanie zakończone",
+    error_prefix: "Błąd",
+    match_label: "Wynik",
 };
 
 static SV: Strings = Strings {
@@ -743,6 +761,8 @@ static SV: Strings = Strings {
     min_size: "Minsta storlek",
     deleting: "Raderar...",
     delete_complete: "Radering klar",
+    error_prefix: "Fel",
+    match_label: "Resultat",
 };
 
 static RU: Strings = Strings {
@@ -810,6 +830,8 @@ static RU: Strings = Strings {
     min_size: "Минимальный размер",
     deleting: "Удаление...",
     delete_complete: "Удаление завершено",
+    error_prefix: "Ошибка",
+    match_label: "Совпадение",
 };
 
 static JA: Strings = Strings {
@@ -877,6 +899,8 @@ static JA: Strings = Strings {
     min_size: "最小サイズ",
     deleting: "削除中...",
     delete_complete: "削除完了",
+    error_prefix: "エラー",
+    match_label: "一致",
 };
 
 static ZH: Strings = Strings {
@@ -944,6 +968,8 @@ static ZH: Strings = Strings {
     min_size: "最小大小",
     deleting: "删除中...",
     delete_complete: "删除完成",
+    error_prefix: "错误",
+    match_label: "匹配",
 };
 
 static KO: Strings = Strings {
@@ -1011,4 +1037,6 @@ static KO: Strings = Strings {
     min_size: "최소 크기",
     deleting: "삭제 중...",
     delete_complete: "삭제 완료",
+    error_prefix: "오류",
+    match_label: "일치",
 };

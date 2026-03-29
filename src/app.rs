@@ -287,10 +287,10 @@ impl App {
                     }
                     ScanProgress::Done => {
                         self.scan_state = ScanState::Done;
-                        self.status_message = Some("Scan complete".to_string());
+                        self.status_message = Some(self.strings.scan_complete.to_string());
                     }
                     ScanProgress::Error(e) => {
-                        self.status_message = Some(format!("Error: {}", e));
+                        self.status_message = Some(format!("{}: {}", self.strings.error_prefix, e));
                     }
                 }
             }
@@ -519,9 +519,13 @@ impl App {
         if !self.search_matches.is_empty() {
             let target = self.search_matches[0];
             self.expand_to_node(target);
-            self.status_message = Some(format!("Match 1/{}", self.search_matches.len()));
+            self.status_message = Some(format!(
+                "{} 1/{}",
+                self.strings.match_label,
+                self.search_matches.len()
+            ));
         } else {
-            self.status_message = Some("No matches found".to_string());
+            self.status_message = Some(self.strings.no_matches.to_string());
         }
     }
 
@@ -534,7 +538,8 @@ impl App {
         let target = self.search_matches[self.search_index];
         self.expand_to_node(target);
         self.status_message = Some(format!(
-            "Match {}/{}",
+            "{} {}/{}",
+            self.strings.match_label,
             self.search_index + 1,
             self.search_matches.len()
         ));
@@ -553,7 +558,8 @@ impl App {
         let target = self.search_matches[self.search_index];
         self.expand_to_node(target);
         self.status_message = Some(format!(
-            "Match {}/{}",
+            "{} {}/{}",
+            self.strings.match_label,
             self.search_index + 1,
             self.search_matches.len()
         ));
