@@ -11,15 +11,32 @@ pub fn delete_path(path: &Path, root: &Path) -> Result<(), String> {
         return Err(format!("Path does not exist: {}", path.display()));
     }
 
-    // Safety: refuse to delete outside root
+    // Security: refuse to delete outside root (prevent symlink escape)
+    // canonicalize() resolves all symlinks, so we can safely check containment
     let canonical = path
         .canonicalize()
         .map_err(|e| format!("Cannot resolve path: {}", e))?;
     let canonical_root = root
         .canonicalize()
         .map_err(|e| format!("Cannot resolve root: {}", e))?;
+
+    // Extra safety: verify the canonical path actually starts with root
+    // This prevents directory traversal attacks via symlinks
     if !canonical.starts_with(&canonical_root) {
-        return Err("Refusing to delete path outside scan root".to_string());
+        return Err(format!(
+            "Security: refusing to delete path outside scan root (path: {}, root: {})",
+            canonical.display(),
+            canonical_root.display()
+        ));
+    }
+
+    // Additional check: ensure the path still exists and hasn't been replaced by a symlink
+    // between canonicalization and deletion (TOCTOU mitigation)
+    let meta = std::fs::symlink_metadata(path).map_err(|e| format!("Cannot stat path: {}", e))?;
+    if meta.is_symlink() {
+        return Err(
+            "Security: refusing to delete symlink (use canonicalized target instead)".to_string(),
+        );
     }
 
     // Try to move to trash using macOS command
