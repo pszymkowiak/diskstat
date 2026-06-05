@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.2](https://github.com/pszymkowiak/diskstat/compare/v0.8.1...v0.8.2) (2026-06-05)
+
+
+### Bug Fixes
+
+* accept localized confirmation key when deleting ([#17](https://github.com/pszymkowiak/diskstat/issues/17)) ([87a3f25](https://github.com/pszymkowiak/diskstat/commit/87a3f25b1a280213c96503c4d5c4c584d2ffccfb))
+
 ## [0.8.1](https://github.com/pszymkowiak/diskstat/compare/v0.8.0...v0.8.1) (2026-03-13)
 
 
