@@ -34,7 +34,7 @@ pub fn compute_extension_stats(tree: &FileTree) -> Vec<ExtensionStats> {
         )
         .collect();
 
-    stats.sort_by(|a, b| b.total_size.cmp(&a.total_size));
+    stats.sort_by_key(|s| std::cmp::Reverse(s.total_size));
 
     // Reassign colors after sorting so top extensions get first colors
     for (i, stat) in stats.iter_mut().enumerate() {

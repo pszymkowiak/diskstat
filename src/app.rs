@@ -569,7 +569,7 @@ impl App {
                 .filter(|&nid| !tree.arena[nid].get().is_dir)
                 .map(|nid| (nid, tree.arena[nid].get().size))
                 .collect();
-            files.sort_by(|a, b| b.1.cmp(&a.1));
+            files.sort_by_key(|f| std::cmp::Reverse(f.1));
             files.truncate(self.top_files_count);
             self.top_files = files;
         }

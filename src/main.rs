@@ -351,8 +351,7 @@ fn run_app(
                             app.rebuild_visible_nodes();
                             app.subtree_target = None;
                             app.scan_state = ScanState::Done;
-                            app.status_message =
-                                Some("Subtree rescan complete".to_string());
+                            app.status_message = Some("Subtree rescan complete".to_string());
                         }
                     }
                     _ => {
@@ -533,11 +532,8 @@ fn run_app(
                             app.progress_rx = Some(rx);
                             subtree_handle = Some(std::thread::spawn(move || {
                                 let (inner_tx, _inner_rx) = mpsc::channel();
-                                let handle = scanner::walk::scan_directory(
-                                    subtree_path,
-                                    inner_tx,
-                                    exclude,
-                                );
+                                let handle =
+                                    scanner::walk::scan_directory(subtree_path, inner_tx, exclude);
                                 // Forward progress via the outer channel
                                 let _ = tx.send(ScanProgress::Done);
                                 handle.join().ok().flatten()
@@ -620,15 +616,19 @@ fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputA
     }
 
     if app.confirm_delete.is_some() {
-        match code {
-            KeyCode::Char('y') | KeyCode::Char('Y') => {
-                if let Some((path, _size, node_id_opt)) = app.confirm_delete.take() {
-                    return InputAction::StartDelete(path, node_id_opt);
-                }
+        // Accept the localized confirmation key (e.g. "o" in French, "j" in
+        // German) as well as the universal "y"/"Y" fallback.
+        let confirmed = match code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => true,
+            KeyCode::Char(c) => c.to_lowercase().eq(app.strings.confirm_yes.chars()),
+            _ => false,
+        };
+        if confirmed {
+            if let Some((path, _size, node_id_opt)) = app.confirm_delete.take() {
+                return InputAction::StartDelete(path, node_id_opt);
             }
-            _ => {
-                app.confirm_delete = None;
-            }
+        } else {
+            app.confirm_delete = None;
         }
         return InputAction::Continue;
     }
@@ -686,15 +686,11 @@ fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputA
             }
             ActiveTab::Duplicates => app.dupes_next_file(),
         },
-        KeyCode::PageUp => {
-            if app.active_tab == ActiveTab::Duplicates {
-                app.dupes_prev_group();
-            }
+        KeyCode::PageUp if app.active_tab == ActiveTab::Duplicates => {
+            app.dupes_prev_group();
         }
-        KeyCode::PageDown => {
-            if app.active_tab == ActiveTab::Duplicates {
-                app.dupes_next_group();
-            }
+        KeyCode::PageDown if app.active_tab == ActiveTab::Duplicates => {
+            app.dupes_next_group();
         }
         KeyCode::Left | KeyCode::Char('h') => app.tree_collapse(),
         KeyCode::Right | KeyCode::Char('l') => app.tree_expand(),
@@ -781,15 +777,11 @@ fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputA
         }
 
         // Next/prev search match
-        KeyCode::Char('n') => {
-            if app.search_query.is_some() {
-                app.search_next();
-            }
+        KeyCode::Char('n') if app.search_query.is_some() => {
+            app.search_next();
         }
-        KeyCode::Char('N') => {
-            if app.search_query.is_some() {
-                app.search_prev();
-            }
+        KeyCode::Char('N') if app.search_query.is_some() => {
+            app.search_prev();
         }
 
         // Export CSV
@@ -838,12 +830,10 @@ fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputA
         }
 
         // Clear filter
-        KeyCode::Char('C') => {
-            if app.min_size_filter.is_some() {
-                app.min_size_filter = None;
-                app.rebuild_visible_nodes();
-                app.status_message = Some(app.strings.filter_cleared.to_string());
-            }
+        KeyCode::Char('C') if app.min_size_filter.is_some() => {
+            app.min_size_filter = None;
+            app.rebuild_visible_nodes();
+            app.status_message = Some(app.strings.filter_cleared.to_string());
         }
 
         _ => {}
@@ -862,15 +852,11 @@ fn handle_top_files_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers)
         KeyCode::Esc | KeyCode::Char('f') => {
             app.top_files_visible = false;
         }
-        KeyCode::Up | KeyCode::Char('k') => {
-            if app.top_files_selected > 0 {
-                app.top_files_selected -= 1;
-            }
+        KeyCode::Up | KeyCode::Char('k') if app.top_files_selected > 0 => {
+            app.top_files_selected -= 1;
         }
-        KeyCode::Down | KeyCode::Char('j') => {
-            if app.top_files_selected + 1 < app.top_files.len() {
-                app.top_files_selected += 1;
-            }
+        KeyCode::Down | KeyCode::Char('j') if app.top_files_selected + 1 < app.top_files.len() => {
+            app.top_files_selected += 1;
         }
         KeyCode::Enter => {
             // Navigate to selected file in tree
@@ -919,15 +905,13 @@ fn handle_menu_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> I
                 }
             }
         }
-        KeyCode::Up => {
-            if app.menu_state.dropdown_open {
-                let count = menu::item_count(app.menu_state.selected_menu);
-                if count > 0 {
-                    if app.menu_state.selected_item == 0 {
-                        app.menu_state.selected_item = count - 1;
-                    } else {
-                        app.menu_state.selected_item -= 1;
-                    }
+        KeyCode::Up if app.menu_state.dropdown_open => {
+            let count = menu::item_count(app.menu_state.selected_menu);
+            if count > 0 {
+                if app.menu_state.selected_item == 0 {
+                    app.menu_state.selected_item = count - 1;
+                } else {
+                    app.menu_state.selected_item -= 1;
                 }
             }
         }
@@ -1299,14 +1283,12 @@ fn handle_mouse(app: &mut App, mouse: crossterm::event::MouseEvent) {
                 }
             }
         }
-        MouseEventKind::Drag(MouseButton::Left) => {
-            if app.dragging_split {
-                let area = app.content_area;
-                if area.width > 0 {
-                    let relative = mx.saturating_sub(area.x);
-                    let pct = (relative as u32 * 100 / area.width as u32) as u16;
-                    app.split_pct = pct.clamp(10, 90);
-                }
+        MouseEventKind::Drag(MouseButton::Left) if app.dragging_split => {
+            let area = app.content_area;
+            if area.width > 0 {
+                let relative = mx.saturating_sub(area.x);
+                let pct = (relative as u32 * 100 / area.width as u32) as u16;
+                app.split_pct = pct.clamp(10, 90);
             }
         }
         MouseEventKind::Up(MouseButton::Left) => {
@@ -1388,7 +1370,7 @@ fn run_json_export(root_path: PathBuf, exclude: Vec<String>) -> io::Result<()> {
         .filter(|&nid| !tree.arena[nid].get().is_dir)
         .map(|nid| (nid, tree.arena[nid].get().size))
         .collect();
-    top_files.sort_by(|a, b| b.1.cmp(&a.1));
+    top_files.sort_by_key(|f| std::cmp::Reverse(f.1));
     top_files.truncate(50);
 
     // Find duplicates (optional, can be slow on large trees)
