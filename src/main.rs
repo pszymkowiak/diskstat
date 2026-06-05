@@ -620,15 +620,19 @@ fn handle_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> InputA
     }
 
     if app.confirm_delete.is_some() {
-        match code {
-            KeyCode::Char('y') | KeyCode::Char('Y') => {
-                if let Some((path, _size, node_id_opt)) = app.confirm_delete.take() {
-                    return InputAction::StartDelete(path, node_id_opt);
-                }
+        // Accept the localized confirmation key (e.g. "o" in French, "j" in
+        // German) as well as the universal "y"/"Y" fallback.
+        let confirmed = match code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => true,
+            KeyCode::Char(c) => c.to_lowercase().eq(app.strings.confirm_yes.chars()),
+            _ => false,
+        };
+        if confirmed {
+            if let Some((path, _size, node_id_opt)) = app.confirm_delete.take() {
+                return InputAction::StartDelete(path, node_id_opt);
             }
-            _ => {
-                app.confirm_delete = None;
-            }
+        } else {
+            app.confirm_delete = None;
         }
         return InputAction::Continue;
     }
