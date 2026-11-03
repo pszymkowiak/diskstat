@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.3](https://github.com/pszymkowiak/diskstat/compare/v0.8.2...v0.8.3) (2026-11-03)
+
+
+### Bug Fixes
+
+* harden binary cache validation and path security ([#9](https://github.com/pszymkowiak/diskstat/issues/9)) ([243de36](https://github.com/pszymkowiak/diskstat/commit/243de36c55e5570606e2655c15303ee29063d297))
+
+
+### Performance Improvements
+
+* optimize sorted_children cache and case-insensitive search ([#10](https://github.com/pszymkowiak/diskstat/issues/10)) ([b467335](https://github.com/pszymkowiak/diskstat/commit/b467335b70afa0fd5864241d69afb10b3123979d))
+
 ## [0.8.2](https://github.com/pszymkowiak/diskstat/compare/v0.8.1...v0.8.2) (2026-06-05)
 
 
