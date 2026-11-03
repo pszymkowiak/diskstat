@@ -30,24 +30,25 @@ pub fn delete_path(path: &Path, root: &Path) -> Result<(), String> {
         ));
     }
 
-    // Additional check: ensure the path still exists and hasn't been replaced by a symlink
-    // between canonicalization and deletion (TOCTOU mitigation)
+    // Refuse to act on a symlink itself. This does not close the race between this check and
+    // the delete below; it only rejects a link that is already in place.
     let meta = std::fs::symlink_metadata(path).map_err(|e| format!("Cannot stat path: {}", e))?;
     if meta.is_symlink() {
-        return Err(
-            "Security: refusing to delete symlink (use canonicalized target instead)".to_string(),
-        );
+        return Err("Security: refusing to delete a symlink".to_string());
     }
 
-    // Try to move to trash using macOS command
+    // Try to move to trash using macOS command. The path is passed as an argument, never
+    // interpolated into the AppleScript source, so a file name cannot inject script.
     let result = std::process::Command::new("osascript")
         .args([
             "-e",
-            &format!(
-                "tell application \"Finder\" to delete POSIX file \"{}\"",
-                path.display()
-            ),
+            "on run argv",
+            "-e",
+            "tell application \"Finder\" to delete POSIX file (item 1 of argv)",
+            "-e",
+            "end run",
         ])
+        .arg(path)
         .output();
 
     match result {
